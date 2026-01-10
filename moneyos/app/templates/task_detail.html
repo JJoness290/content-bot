@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+{% if not task %}
+  <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+    <h3 class="text-lg font-semibold">Task not found</h3>
+    <p class="text-sm text-slate-500">Return to the checklist to pick another task.</p>
+  </div>
+{% else %}
+  <div class="flex items-center justify-between">
+    <div>
+      <h3 class="text-2xl font-semibold">Request Card</h3>
+      <p class="text-sm text-slate-500">{{ task.title }}</p>
+    </div>
+    <span class="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-700">{{ task.status }}</span>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div class="lg:col-span-2 space-y-6">
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+        <h4 class="text-sm uppercase tracking-wider text-slate-400">What I need from you</h4>
+        <p class="mt-2 text-sm">{{ task.details.need }}</p>
+      </div>
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+        <h4 class="text-sm uppercase tracking-wider text-slate-400">Why I need it</h4>
+        <p class="mt-2 text-sm">{{ task.details.why }}</p>
+      </div>
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+        <h4 class="text-sm uppercase tracking-wider text-slate-400">Full click-by-click steps</h4>
+        <ol class="mt-3 space-y-2 text-sm list-decimal list-inside">
+          {% for step in task.details.steps %}
+            <li>{{ step }}</li>
+          {% endfor %}
+        </ol>
+      </div>
+    </div>
+    <div class="space-y-6">
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+        <h4 class="text-sm uppercase tracking-wider text-slate-400">Risk level</h4>
+        <p class="mt-2 text-sm font-semibold">{{ task.details.risk }}</p>
+      </div>
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+        <h4 class="text-sm uppercase tracking-wider text-slate-400">What to paste back</h4>
+        <p class="mt-2 text-sm">{{ task.details.paste_back }}</p>
+      </div>
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+        <h4 class="text-sm uppercase tracking-wider text-slate-400">What happens next</h4>
+        <p class="mt-2 text-sm">{{ task.details.next }}</p>
+      </div>
+    </div>
+  </div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="flex items-center justify-between">
+  <div>
+    <h3 class="text-2xl font-semibold">Assets</h3>
+    <p class="text-sm text-slate-500">Drafts and published content waiting for human review.</p>
+  </div>
+  <div class="flex items-center gap-3">
+    <button class="text-xs px-3 py-2 rounded-full bg-slate-900 text-white" data-modal-open="generate-asset">
+      Generate New Medium Article
+    </button>
+    <span class="text-xs px-3 py-1 rounded-full bg-slate-900 text-white">Draft-only mode</span>
+  </div>
+</div>
+
+<div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+      <tr>
+        <th class="text-left px-6 py-3">Title</th>
+        <th class="text-left px-6 py-3">Platform</th>
+        <th class="text-left px-6 py-3">Status</th>
+        <th class="text-left px-6 py-3">Updated</th>
+        <th class="text-left px-6 py-3">Action</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {% for asset in assets %}
+        <tr class="hover:bg-slate-50">
+          <td class="px-6 py-4 font-medium">{{ asset.title }}</td>
+          <td class="px-6 py-4 text-slate-500">{{ asset.platform }}</td>
+          <td class="px-6 py-4">
+            <span class="text-xs px-2 py-1 rounded-full
+              {% if asset.status == 'DRAFT' %}bg-slate-100 text-slate-700
+              {% elif asset.status == 'READY_TO_PUBLISH' %}bg-amber-100 text-amber-700
+              {% elif asset.status == 'PUBLISHED' %}bg-emerald-100 text-emerald-700
+              {% else %}bg-slate-100 text-slate-700{% endif %}
+            ">
+              {{ asset.status }}
+            </span>
+          </td>
+          <td class="px-6 py-4 text-slate-500">{{ asset.updated_at }}</td>
+          <td class="px-6 py-4">
+            <a class="text-sm font-semibold text-slate-900 hover:text-slate-600" href="/assets/{{ asset.id }}">Open →</a>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div id="generate-asset" class="fixed inset-0 bg-slate-900/50 hidden items-center justify-center">
+  <div class="bg-white rounded-2xl shadow-lg w-full max-w-xl p-6">
+    <div class="flex items-center justify-between">
+      <h4 class="text-lg font-semibold">Generate New Medium Article</h4>
+      <button class="text-sm text-slate-500" data-modal-close="generate-asset">Close</button>
+    </div>
+    <form class="mt-4 space-y-4" method="post" action="/assets/generate">
+      <div>
+        <label class="block text-sm text-slate-600">Platform</label>
+        <input name="platform" value="medium" class="mt-2 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+      </div>
+      <div>
+        <label class="block text-sm text-slate-600">Topic / Prompt</label>
+        <input name="topic" required class="mt-2 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" placeholder="budgeting for beginners" />
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div>
+          <label class="block text-sm text-slate-600">Tone</label>
+          <input name="tone" value="friendly" class="mt-2 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+        </div>
+        <div>
+          <label class="block text-sm text-slate-600">Length</label>
+          <select name="length" class="mt-2 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm">
+            <option value="short">Short</option>
+            <option value="medium" selected>Medium</option>
+            <option value="long">Long</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm text-slate-600">Audience</label>
+          <input name="audience" value="UK" class="mt-2 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <input id="draft-only" name="draft_only" type="checkbox" class="rounded border-slate-300" checked />
+        <label for="draft-only" class="text-sm text-slate-600">Draft-only mode</label>
+      </div>
+      <button class="w-full bg-emerald-600 text-white rounded-lg py-2 text-sm font-semibold" type="submit">
+        Generate
+      </button>
+    </form>
+  </div>
+</div>
+{% endblock %}

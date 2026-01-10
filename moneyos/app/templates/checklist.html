@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="flex items-center justify-between">
+  <div>
+    <h3 class="text-2xl font-semibold">Checklist</h3>
+    <p class="text-sm text-slate-500">Actionable tasks with clear human steps.</p>
+  </div>
+  <span class="text-xs px-3 py-1 rounded-full bg-slate-900 text-white">Safe Mode</span>
+</div>
+
+<div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+  <table class="w-full">
+    <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+      <tr>
+        <th class="text-left px-6 py-3">Task</th>
+        <th class="text-left px-6 py-3">Category</th>
+        <th class="text-left px-6 py-3">Status</th>
+        <th class="text-left px-6 py-3">Action</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {% for task in tasks %}
+        <tr class="hover:bg-slate-50">
+          <td class="px-6 py-4 font-medium">{{ task.title }}</td>
+          <td class="px-6 py-4 text-sm text-slate-500">{{ task.category }}</td>
+          <td class="px-6 py-4">
+            <span class="text-xs px-2 py-1 rounded-full
+              {% if task.status == 'WAITING_ON_YOU' %}bg-amber-100 text-amber-700
+              {% elif task.status == 'DONE' %}bg-emerald-100 text-emerald-700
+              {% elif task.status == 'BLOCKED' %}bg-rose-100 text-rose-700
+              {% else %}bg-slate-100 text-slate-700{% endif %}
+            ">
+              {{ task.status }}
+            </span>
+          </td>
+          <td class="px-6 py-4">
+            <a class="text-sm font-semibold text-slate-900 hover:text-slate-600" href="/checklist/{{ task.id }}">Open Request Card →</a>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="flex items-center justify-between">
+  <div>
+    <h3 class="text-2xl font-semibold">TikTok</h3>
+    <p class="text-sm text-slate-500">Generate vertical videos from short scripts.</p>
+  </div>
+  <div class="text-xs text-slate-500">
+    Open output folder: <span class="font-semibold">{{ output_path }}</span>
+  </div>
+</div>
+
+{% if not ffmpeg_ready %}
+  <div class="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-900">
+    <p class="font-semibold">FFmpeg is not available.</p>
+    <p class="text-sm">Install FFmpeg and add it to PATH to generate videos.</p>
+  </div>
+{% endif %}
+
+<div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+  <form method="post" action="/tiktok/script" class="flex flex-col gap-3">
+    <label class="text-sm text-slate-600">Script topic</label>
+    <input name="topic" required class="border border-slate-200 rounded-lg px-3 py-2 text-sm" placeholder="Budgeting tips for beginners" />
+    <button class="w-fit bg-slate-900 text-white rounded-lg px-4 py-2 text-sm font-semibold" type="submit">
+      Generate Script
+    </button>
+  </form>
+</div>
+
+<div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+      <tr>
+        <th class="text-left px-6 py-3">Topic</th>
+        <th class="text-left px-6 py-3">Hook</th>
+        <th class="text-left px-6 py-3">Outputs</th>
+        <th class="text-left px-6 py-3">Actions</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {% for item in scripts %}
+        <tr class="align-top">
+          <td class="px-6 py-4 font-medium">{{ item.payload.topic }}</td>
+          <td class="px-6 py-4 text-slate-600">{{ item.payload.hook }}</td>
+          <td class="px-6 py-4">
+            {% for output in item.outputs %}
+              {% if output.payload.video_path %}
+                <div class="text-xs text-slate-600">
+                  MP4: <a class="text-slate-900 underline" href="/output/{{ output.payload.video_path }}">{{ output.payload.video_path }}</a>
+                </div>
+              {% endif %}
+              {% if output.payload.srt_path %}
+                <div class="text-xs text-slate-600">
+                  SRT: <a class="text-slate-900 underline" href="/output/{{ output.payload.srt_path }}">{{ output.payload.srt_path }}</a>
+                </div>
+              {% endif %}
+            {% endfor %}
+          </td>
+          <td class="px-6 py-4">
+            <form method="post" action="/tiktok/{{ item.row.id }}/generate-video">
+              <button class="bg-emerald-600 text-white rounded-lg px-3 py-2 text-xs font-semibold disabled:opacity-50" type="submit" {% if not ffmpeg_ready %}disabled{% endif %}>
+                Generate Video From Script
+              </button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+  <div class="bg-white rounded-2xl shadow-sm p-6 border border-slate-200">
+    <h3 class="text-lg font-semibold">Key metrics</h3>
+    <p class="text-sm text-slate-500 mb-4">Latest daily signals</p>
+    <ul class="space-y-3">
+      {% for metric in metrics %}
+        <li class="flex items-center justify-between">
+          <div>
+            <p class="text-sm font-medium">{{ metric.metric_name }}</p>
+            <p class="text-xs text-slate-400">{{ metric.stream }}</p>
+          </div>
+          <span class="text-sm font-semibold">{{ metric.value }}</span>
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+  <div class="bg-white rounded-2xl shadow-sm p-6 border border-slate-200">
+    <h3 class="text-lg font-semibold">Latest tasks</h3>
+    <p class="text-sm text-slate-500 mb-4">Newest checklist items</p>
+    <ul class="space-y-3">
+      {% for task in tasks %}
+        <li class="flex items-center justify-between">
+          <span class="text-sm font-medium">{{ task.title }}</span>
+          <span class="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-600">{{ task.status }}</span>
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+  <div class="bg-white rounded-2xl shadow-sm p-6 border border-slate-200">
+    <h3 class="text-lg font-semibold">Experiments</h3>
+    <p class="text-sm text-slate-500 mb-4">Learning cycle snapshot</p>
+    <ul class="space-y-3">
+      {% for exp in experiments %}
+        <li>
+          <p class="text-sm font-medium">{{ exp.name }}</p>
+          <p class="text-xs text-slate-400">{{ exp.status }}</p>
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+
+<div class="bg-gradient-to-r from-slate-900 to-slate-700 rounded-2xl p-6 text-white">
+  <h3 class="text-xl font-semibold">£0 Safe Mode active</h3>
+  <p class="text-sm text-slate-200 mt-2">Spend and risk actions are blocked. Research, planning, drafting, and reporting are allowed.</p>
+</div>
+
+{% if limited_mode() %}
+  <div class="bg-white rounded-2xl shadow-sm border border-amber-200 p-6">
+    <div class="flex items-center justify-between">
+      <h3 class="text-xl font-semibold text-amber-700">Dependencies not installed (Limited Mode)</h3>
+      <span class="text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-700">Limited Mode</span>
+    </div>
+    <p class="text-sm text-slate-600 mt-2">MoneyOS couldn’t download Python packages due to network/proxy restrictions.</p>
+    <div class="mt-4 bg-amber-50 border border-amber-200 rounded-xl p-4">
+      <h4 class="text-sm font-semibold text-amber-800">Fix it (Windows)</h4>
+      <ol class="mt-2 text-sm list-decimal list-inside text-amber-900 space-y-1">
+        <li>Try switching to home Wi-Fi or disable VPN.</li>
+        <li>Open Command Prompt.</li>
+        <li><code>cd</code> into the MoneyOS project folder.</li>
+        <li>Run: <code>.venv\\Scripts\\activate</code></li>
+        <li>Run: <code>pip install -r requirements.txt</code></li>
+        <li>Run: <code>python start.py</code></li>
+      </ol>
+    </div>
+    <details class="mt-4">
+      <summary class="text-sm font-semibold text-slate-600 cursor-pointer">Details</summary>
+      <pre class="mt-2 text-xs bg-slate-900 text-slate-100 p-3 rounded-lg overflow-auto">{{ bootstrap_error() or 'No error log found.' }}</pre>
+    </details>
+  </div>
+{% endif %}
+{% endblock %}

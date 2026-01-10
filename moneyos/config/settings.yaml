@@ -1,0 +1,9 @@
+app:
+  name: MoneyOS
+  host: 127.0.0.1
+  port: 8000
+safety:
+  mode: "£0 Safe Mode"
+  block_actions:
+    - SPEND
+    - RISK

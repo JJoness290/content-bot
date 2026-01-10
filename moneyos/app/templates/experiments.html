@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="flex items-center justify-between">
+  <div>
+    <h3 class="text-2xl font-semibold">Experiments</h3>
+    <p class="text-sm text-slate-500">Track hypothesis-driven learning loops.</p>
+  </div>
+  <span class="text-xs px-3 py-1 rounded-full bg-emerald-100 text-emerald-700">Learning On</span>
+</div>
+
+{% if limited_mode() %}
+  <div class="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-4">
+    Limited Mode: experiment analysis features are unavailable until dependencies are installed.
+  </div>
+{% endif %}
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+  {% for exp in experiments %}
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+      <div class="flex items-center justify-between">
+        <h4 class="text-lg font-semibold">{{ exp.name }}</h4>
+        <span class="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-600">{{ exp.status }}</span>
+      </div>
+      <p class="text-sm text-slate-500 mt-2">{{ exp.hypothesis }}</p>
+      <div class="mt-4 text-xs text-slate-400">Variants: {{ exp.variants_json }}</div>
+    </div>
+  {% endfor %}
+</div>
+{% endblock %}

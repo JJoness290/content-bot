@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+  <h3 class="text-2xl font-semibold">Research</h3>
+  <p class="text-sm text-slate-500 mt-2">Capture and summarize external research. (Fetching is handled in core/research.py.)</p>
+  {% if limited_mode() %}
+    <div class="mt-4 p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900">
+      Limited Mode: research fetching is unavailable until dependencies are installed.
+    </div>
+  {% endif %}
+  <div class="mt-4 p-4 rounded-xl bg-slate-50 border border-slate-200">
+    <p class="text-sm text-slate-600">Use this area to queue URLs for summaries or store key notes.</p>
+  </div>
+</div>
+{% endblock %}

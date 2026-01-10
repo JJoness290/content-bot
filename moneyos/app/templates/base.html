@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MoneyOS</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/static/app.css" />
+</head>
+<body class="bg-slate-100 text-slate-900">
+  <div class="min-h-screen flex">
+    <aside class="w-64 bg-slate-900 text-slate-100 flex flex-col">
+      <div class="p-6 border-b border-slate-800">
+        <h1 class="text-2xl font-semibold">MoneyOS</h1>
+        <p class="text-xs text-slate-400 mt-1">Safe, structured, learning-first</p>
+      </div>
+      <nav class="flex-1 p-4 space-y-2">
+        {% set nav_items = [
+          ("Overview", "/overview"),
+          ("Checklist", "/checklist"),
+          ("Research", "/research"),
+          ("Experiments", "/experiments"),
+          ("Metrics", "/metrics"),
+          ("Assets", "/assets"),
+          ("TikTok", "/tiktok"),
+          ("YouTube", "/youtube"),
+          ("Memory & Logs", "/logs"),
+          ("Settings", "/settings")
+        ] %}
+        {% for name, url in nav_items %}
+          <a href="{{ url }}" class="flex items-center px-3 py-2 rounded-lg text-sm font-medium transition {{ 'bg-slate-800 text-white' if active_page == name else 'text-slate-300 hover:bg-slate-800 hover:text-white' }}">
+            <span class="w-2 h-2 rounded-full mr-3 {{ 'bg-emerald-400' if active_page == name else 'bg-slate-600' }}"></span>
+            {{ name }}
+          </a>
+        {% endfor %}
+      </nav>
+      <div class="p-4 border-t border-slate-800 text-xs text-slate-400">
+        Data stored locally in <span class="text-slate-200">data/moneyos.db</span>
+      </div>
+    </aside>
+
+    <main class="flex-1">
+      <header class="bg-white border-b border-slate-200">
+        <div class="px-8 py-4 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p class="text-xs uppercase tracking-wider text-slate-400">Current Mode</p>
+            <h2 class="text-xl font-semibold">{{ mode }}</h2>
+          </div>
+          <div class="flex flex-col lg:flex-row gap-4">
+            <div class="bg-slate-50 border border-slate-200 px-4 py-2 rounded-lg">
+              <p class="text-xs text-slate-400">Active stream</p>
+              <p class="text-sm font-semibold">Core revenue</p>
+            </div>
+            {% if safe_mode %}
+              <div class="bg-rose-50 border border-rose-200 px-4 py-2 rounded-lg">
+                <p class="text-xs text-rose-600">Health</p>
+                <p class="text-sm font-semibold text-rose-700">Safe Mode</p>
+              </div>
+            {% elif limited_mode() %}
+              <div class="bg-amber-50 border border-amber-200 px-4 py-2 rounded-lg">
+                <p class="text-xs text-amber-600">Health</p>
+                <p class="text-sm font-semibold text-amber-700">Limited Mode</p>
+              </div>
+            {% else %}
+              <div class="bg-emerald-50 border border-emerald-200 px-4 py-2 rounded-lg">
+                <p class="text-xs text-emerald-600">Health</p>
+                <p class="text-sm font-semibold text-emerald-700">Ready</p>
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      </header>
+
+      <section class="p-8 space-y-6">
+        <div id="autopilot-banner" class="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900 hidden">
+          <div class="flex items-start justify-between">
+            <div>
+              <h3 class="text-lg font-semibold">Autopilot check overdue</h3>
+              <p class="text-sm">Content autopilot has not reported a tick recently.</p>
+            </div>
+            <span class="text-xs font-semibold uppercase tracking-wide">Attention</span>
+          </div>
+          <p class="text-sm mt-2">Last run: <span id="autopilot-last-run">Never</span></p>
+          <p class="text-xs mt-1 text-amber-700">Last result: <span id="autopilot-last-result">Unknown</span></p>
+        </div>
+        {% if safe_mode %}
+          <div class="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-900">
+            <div class="flex items-start justify-between">
+              <div>
+                <h3 class="text-lg font-semibold">Safe Mode active</h3>
+                <p class="text-sm">MoneyOS is in Safe Mode because required resources are missing.</p>
+              </div>
+              <span class="text-xs font-semibold uppercase tracking-wide">Safe Mode</span>
+            </div>
+            <div class="mt-3 text-sm">
+              <p class="font-semibold">Why:</p>
+              <ul class="list-disc list-inside">
+                {% for reason in safe_mode_reasons %}
+                  <li>{{ reason }}</li>
+                {% endfor %}
+              </ul>
+              <p class="font-semibold mt-2">Next steps:</p>
+              <ul class="list-disc list-inside">
+                {% for step in safe_mode_steps %}
+                  <li>{{ step }}</li>
+                {% endfor %}
+              </ul>
+            </div>
+          </div>
+        {% endif %}
+        {% if limited_mode() %}
+          <div class="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
+            <div class="flex items-start justify-between">
+              <div>
+                <h3 class="text-lg font-semibold">Dependencies not installed (Limited Mode)</h3>
+                <p class="text-sm">MoneyOS couldn’t download Python packages due to network/proxy restrictions.</p>
+              </div>
+              <span class="text-xs font-semibold uppercase tracking-wide">Limited Mode</span>
+            </div>
+          </div>
+        {% endif %}
+        {% block content %}{% endblock %}
+      </section>
+    </main>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

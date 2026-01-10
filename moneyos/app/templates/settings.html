@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+  <h3 class="text-2xl font-semibold">Settings</h3>
+  <p class="text-sm text-slate-500">Configure safe mode and operational defaults.</p>
+
+  <div class="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div class="border border-slate-200 rounded-xl p-4">
+      <p class="text-xs uppercase text-slate-400">Current mode</p>
+      <p class="text-lg font-semibold mt-2">{{ mode }}</p>
+      <p class="text-sm text-slate-500 mt-1">Spend and risk actions are blocked by default.</p>
+    </div>
+    <div class="border border-slate-200 rounded-xl p-4">
+      <p class="text-xs uppercase text-slate-400">Funding source</p>
+      <p class="text-sm text-slate-600 mt-2">Add your bank details in the Request Card from the Checklist.</p>
+    </div>
+  </div>
+
+  <div class="mt-8 border-t border-slate-200 pt-6">
+    <h4 class="text-lg font-semibold">Content Autopilot</h4>
+    <p class="text-sm text-slate-500">Hybrid schedule + triggers. Draft-only with human publishing gate.</p>
+
+    <div class="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {% set autopilot_status = autopilot_status() %}
+      <div class="border border-slate-200 rounded-xl p-4">
+        <p class="text-xs uppercase text-slate-400">Autopilot status</p>
+        <p class="text-sm font-semibold mt-2">{{ "Enabled" if autopilot_status.enabled else "Disabled" }}</p>
+        <p class="text-sm text-slate-500 mt-1">Last run: {{ autopilot_status.last_run_at or "Never" }}</p>
+        <p class="text-sm text-slate-500 mt-1">Last result: {{ autopilot_status.last_run_result or "Unknown" }}</p>
+      </div>
+      <div class="border border-slate-200 rounded-xl p-4">
+        <p class="text-xs uppercase text-slate-400">Enabled</p>
+        <p class="text-sm font-semibold mt-2">{{ "On" if autopilot.enabled else "Off" }}</p>
+      </div>
+      <div class="border border-slate-200 rounded-xl p-4">
+        <p class="text-xs uppercase text-slate-400">Mode</p>
+        <p class="text-sm font-semibold mt-2">Draft-only (human publish gate)</p>
+      </div>
+      <div class="border border-slate-200 rounded-xl p-4">
+        <p class="text-xs uppercase text-slate-400">Draft schedule</p>
+        <p class="text-sm mt-2">Drafts per week: {{ autopilot.drafts_per_week }}</p>
+        <p class="text-sm mt-1">Preferred days: Mon/Wed/Fri</p>
+        <p class="text-sm mt-1">Preferred hour: {{ autopilot.preferred_hour }}:00</p>
+      </div>
+      <div class="border border-slate-200 rounded-xl p-4">
+        <p class="text-xs uppercase text-slate-400">Triggers</p>
+        <ul class="text-sm mt-2 list-disc list-inside space-y-1 text-slate-600">
+          <li>No drafts in last 7 days</li>
+          <li>Traffic below {{ autopilot.traffic_threshold }}</li>
+          <li>CTR below {{ autopilot.ctr_threshold }}</li>
+          <li>Only 0–1 published assets exist</li>
+        </ul>
+      </div>
+      <div class="border border-slate-200 rounded-xl p-4">
+        <p class="text-xs uppercase text-slate-400">Platform default</p>
+        <p class="text-sm mt-2">{{ autopilot.platform_default | capitalize }}</p>
+      </div>
+      <div class="border border-slate-200 rounded-xl p-4">
+        <p class="text-xs uppercase text-slate-400">Backlog limits</p>
+        <p class="text-sm mt-2">Max ready to publish: {{ autopilot.max_ready_to_publish }}</p>
+        <p class="text-sm mt-1">Max drafts: {{ autopilot.max_drafts }}</p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
