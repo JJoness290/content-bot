@@ -222,10 +222,10 @@ def render_video(
     background_path = background_path.resolve() if background_path else None
     output_dir = OUTPUT_DIR / platform
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = (output_dir / f"video_{script_id}.mp4").resolve()
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    if output_path.suffix.lower() != ".mp4":
-        raise ValueError(f"Output path must end with .mp4: {output_path}")
+    output_path = str((output_dir / f"video_{script_id}.mp4").resolve())
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    assert isinstance(output_path, str)
+    assert output_path.endswith(".mp4")
     logger.info("FFmpeg output path: %s", output_path)
     size = "1080x1920"
     if background_path:
@@ -265,17 +265,21 @@ def render_video(
         enable="between(t,0,3)",
     )
 
-    subtitled = hook_draw.filter(
+    subtitled = ffmpeg.filter(
+        hook_draw,
         "subtitles",
-        filename=srt_path.as_posix(),
-        force_style="FontName=Arial,FontSize=38,PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,Outline=2,Alignment=2,MarginV=120",
+        srt_path.as_posix(),
+        force_style=(
+            "FontName=Arial,FontSize=38,PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,"
+            "Outline=2,Alignment=2,MarginV=120"
+        ),
     )
 
     audio = ffmpeg.input(audio_path.as_posix())
     ffmpeg_cmd = ffmpeg.output(
         subtitled,
         audio,
-        str(output_path),
+        output_path,
         vcodec="libx264",
         acodec="aac",
         pix_fmt="yuv420p",
