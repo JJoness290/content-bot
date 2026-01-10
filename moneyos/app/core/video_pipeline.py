@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import ffmpeg
+import logging
 import requests
 from pydub import AudioSegment
 
@@ -27,6 +28,7 @@ TIKTOK_DIR = OUTPUT_DIR / "tiktok"
 YOUTUBE_DIR = OUTPUT_DIR / "youtube"
 
 FONT = "Arial"
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -218,6 +220,11 @@ def render_video(
     srt_path = srt_path.resolve()
     output_path = output_path.resolve()
     background_path = background_path.resolve() if background_path else None
+    output_path = output_path.resolve()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if output_path.suffix.lower() != ".mp4":
+        raise ValueError(f"Output path must end with .mp4: {output_path}")
+    logger.info("FFmpeg output path: %s", output_path)
     size = "1080x1920"
     if background_path:
         if not background_path.exists():
@@ -274,12 +281,13 @@ def render_video(
         shortest=1,
         movflags="+faststart",
     )
+    logger.info("FFmpeg command: %s", " ".join(ffmpeg_cmd.compile()))
     try:
         ffmpeg_cmd.run(overwrite_output=True)
     except ffmpeg.Error as exc:
         stderr = exc.stderr.decode(errors="ignore") if exc.stderr else ""
-        print("FFMPEG STDERR:", stderr)
-        raise
+        logger.error("FFMPEG STDERR: %s", stderr)
+        raise RuntimeError(f"FFmpeg failed: {stderr}") from exc
 
 
 def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
@@ -294,6 +302,8 @@ def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
     audio_path = platform_dir / f"voice_{script.id}_{timestamp}.mp3"
     srt_path = platform_dir / f"captions_{script.id}_{timestamp}.srt"
     video_path = platform_dir / f"video_{script.id}_{timestamp}.mp4"
+    video_path = video_path.resolve()
+    video_path.parent.mkdir(parents=True, exist_ok=True)
 
     generate_voiceover(voice_text, audio_path)
     srt_path, duration = generate_srt(voice_text, audio_path, srt_path)
@@ -315,6 +325,7 @@ def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
         background_path=background_path,
         background_is_video=background_is_video,
     )
+    logger.info("Video rendered: %s", video_path)
 
     rel_video = str(video_path.relative_to(OUTPUT_DIR))
     rel_srt = str(srt_path.relative_to(OUTPUT_DIR))
