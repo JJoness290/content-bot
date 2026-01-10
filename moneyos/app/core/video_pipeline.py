@@ -223,7 +223,7 @@ def render_video(
 ) -> Path:
     ensure_dirs()
     audio_path = audio_path.resolve()
-    srt_path = srt_path.resolve() if srt_path else None
+    srt_path = srt_path.resolve().as_posix() if srt_path else None
     background_path = background_path.resolve() if background_path else None
     output_dir = OUTPUT_DIR / platform
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -271,7 +271,7 @@ def render_video(
     )
 
     subtitles_enabled = True
-    if not srt_path or not srt_path.exists():
+    if not srt_path or not Path(srt_path).exists():
         logger.warning("Captions missing, rendering without subtitles")
         subtitles_enabled = False
 
@@ -280,7 +280,7 @@ def render_video(
         subtitled = ffmpeg.filter(
             hook_draw,
             "subtitles",
-            srt_path.as_posix(),
+            srt_path,
             force_style=(
                 "FontName=Arial,FontSize=38,PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,"
                 "Outline=2,Alignment=2,MarginV=120"
