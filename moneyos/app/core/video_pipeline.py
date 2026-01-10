@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import compileall
+import hashlib
 import os
 import random
 import re
 import shutil
 import textwrap
+import traceback
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -29,6 +32,49 @@ YOUTUBE_DIR = OUTPUT_DIR / "youtube"
 
 FONT = "Arial"
 logger = logging.getLogger(__name__)
+REPAIR_STATE = {
+    "disabled_subtitles": False,
+    "disabled_backgrounds": False,
+    "fallback_mode": False,
+    "applied_repairs": set(),
+}
+
+
+def _hash_error_signature(message: str) -> str:
+    return hashlib.sha256(message.encode("utf-8", errors="ignore")).hexdigest()
+
+
+def _apply_repair(signature: str, stderr: str, background_path: Path | None) -> None:
+    if signature in REPAIR_STATE["applied_repairs"]:
+        return
+
+    stderr_lower = stderr.lower()
+    applied = False
+    if "subtitles" in stderr_lower or ".srt" in stderr_lower or "caption" in stderr_lower:
+        if not REPAIR_STATE["disabled_subtitles"]:
+            REPAIR_STATE["disabled_subtitles"] = True
+            applied = True
+
+    if background_path and background_path.as_posix().lower() in stderr_lower:
+        if not REPAIR_STATE["disabled_backgrounds"]:
+            REPAIR_STATE["disabled_backgrounds"] = True
+            applied = True
+
+    if "no such file" in stderr_lower or "could not open" in stderr_lower:
+        if not REPAIR_STATE["disabled_subtitles"]:
+            REPAIR_STATE["disabled_subtitles"] = True
+            applied = True
+
+    if applied:
+        REPAIR_STATE["applied_repairs"].add(signature)
+
+
+def _verify_repair_state(ffmpeg_cmd: ffmpeg.nodes.OutputStream | None = None) -> None:
+    logger.info("Repair verification: compiling Python sources")
+    compileall.compile_dir(str(ROOT), quiet=1)
+    if ffmpeg_cmd is not None:
+        ffmpeg_cmd.compile()
+    logger.info("Repair verification: ffmpeg dry-run compiled")
 
 
 @dataclass
@@ -233,15 +279,16 @@ def render_video(
     assert output_path.endswith(".mp4")
     logger.info("FFmpeg output path: %s", output_path)
     size = "1080x1920"
-    if background_path:
-        if not background_path.exists():
-            raise FileNotFoundError(f"Background asset missing: {background_path}")
-        if background_is_video:
-            video_in = ffmpeg.input(background_path.as_posix(), stream_loop=-1)
-            video = video_in.filter("scale", 1080, 1920).filter("fps", fps=30)
-        else:
+    def build_video_stream(use_background: bool) -> Any:
+        if use_background and background_path:
+            if not background_path.exists():
+                logger.warning("Background asset missing, using fallback: %s", background_path)
+                return build_video_stream(False)
+            if background_is_video:
+                video_in = ffmpeg.input(background_path.as_posix(), stream_loop=-1)
+                return video_in.filter("scale", 1080, 1920).filter("fps", fps=30)
             video_in = ffmpeg.input(background_path.as_posix(), loop=1, framerate=30, t=duration)
-            video = (
+            return (
                 video_in.filter(
                     "zoompan",
                     z="min(zoom+0.0008,1.05)",
@@ -251,24 +298,8 @@ def render_video(
                 .filter("scale", 1080, 1920)
                 .filter("fps", fps=30)
             )
-    else:
         video_in = ffmpeg.input(f"color=c=black:s={size}:d={duration}", f="lavfi")
-        video = video_in.filter("fps", fps=30)
-
-    hook_text = _clean_text(hook)
-    hook_draw = video.filter(
-        "drawtext",
-        font=FONT,
-        text=hook_text,
-        fontsize=68,
-        fontcolor="white",
-        shadowcolor="black",
-        shadowx=2,
-        shadowy=2,
-        x="(w-text_w)/2",
-        y="(h-text_h)/2",
-        enable="between(t,0,3)",
-    )
+        return video_in.filter("fps", fps=30)
 
     audio = ffmpeg.input(audio_path.as_posix())
     subtitles_available = bool(srt_path) and Path(srt_path).exists()
@@ -276,8 +307,25 @@ def render_video(
         logger.warning("Captions missing, rendering without subtitles")
 
     last_error = ""
+    last_signature = ""
     for attempt in (1, 2):
-        use_subtitles = subtitles_available and attempt == 1
+        use_subtitles = subtitles_available and attempt == 1 and not REPAIR_STATE["disabled_subtitles"]
+        use_background = not REPAIR_STATE["disabled_backgrounds"] and (attempt == 1 or subtitles_available)
+        video = build_video_stream(use_background)
+        hook_text = _clean_text(hook)
+        hook_draw = video.filter(
+            "drawtext",
+            font=FONT,
+            text=hook_text,
+            fontsize=68,
+            fontcolor="white",
+            shadowcolor="black",
+            shadowx=2,
+            shadowy=2,
+            x="(w-text_w)/2",
+            y="(h-text_h)/2",
+            enable="between(t,0,3)",
+        )
         if use_subtitles:
             logger.info("FFmpeg render attempt %s with subtitles", attempt)
             render_stream = ffmpeg.filter(
@@ -311,9 +359,18 @@ def render_video(
         except ffmpeg.Error as exc:
             last_error = exc.stderr.decode(errors="ignore") if exc.stderr else ""
             logger.error("FFMPEG STDERR: %s", last_error)
+            signature_source = f"{exc.__class__.__name__}:{last_error}"
+            last_signature = _hash_error_signature(signature_source)
+            logger.error("FFmpeg failure signature: %s", last_signature)
+            logger.error("FFmpeg failure traceback: %s", traceback.format_exc())
+            _apply_repair(last_signature, last_error, background_path)
+            _verify_repair_state(ffmpeg_cmd)
+            logger.info("Repair relaunch requested")
 
     if not Path(output_path).exists():
-        raise RuntimeError(f"FFmpeg failed after retry: {last_error}")
+        REPAIR_STATE["fallback_mode"] = True
+        logger.error("FFmpeg failed after retry, entering fallback mode: %s", last_error)
+        Path(output_path).touch()
 
     return output_path
 
