@@ -136,7 +136,8 @@ def _format_srt_timestamp(seconds: float) -> str:
     return f"{hrs:02}:{mins:02}:{secs:02},{ms:03}"
 
 
-def generate_srt(text: str, audio_path: Path, output_path: Path) -> tuple[Path, float]:
+def generate_captions(text: str, audio_path: Path, output_path: Path) -> tuple[Path, float]:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     audio = AudioSegment.from_file(audio_path)
     duration = audio.duration_seconds
     sentences = _sentence_chunks(text)
@@ -154,6 +155,10 @@ def generate_srt(text: str, audio_path: Path, output_path: Path) -> tuple[Path, 
         lines.append(f"{idx}\n{_format_srt_timestamp(start)} --> {_format_srt_timestamp(end)}\n{wrapped}\n")
     output_path.write_text("\n".join(lines), encoding="utf-8")
     return output_path, duration
+
+
+def generate_srt(text: str, audio_path: Path, output_path: Path) -> tuple[Path, float]:
+    return generate_captions(text, audio_path, output_path)
 
 
 def _pick_local_background() -> tuple[Path | None, bool]:
@@ -209,7 +214,7 @@ def render_video(
     script_text: str,
     hook: str,
     audio_path: Path,
-    srt_path: Path,
+    srt_path: Path | None,
     duration: float,
     background_path: Path | None,
     background_is_video: bool,
@@ -218,7 +223,7 @@ def render_video(
 ) -> Path:
     ensure_dirs()
     audio_path = audio_path.resolve()
-    srt_path = srt_path.resolve()
+    srt_path = srt_path.resolve() if srt_path else None
     background_path = background_path.resolve() if background_path else None
     output_dir = OUTPUT_DIR / platform
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -265,15 +270,22 @@ def render_video(
         enable="between(t,0,3)",
     )
 
-    subtitled = ffmpeg.filter(
-        hook_draw,
-        "subtitles",
-        srt_path.as_posix(),
-        force_style=(
-            "FontName=Arial,FontSize=38,PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,"
-            "Outline=2,Alignment=2,MarginV=120"
-        ),
-    )
+    subtitles_enabled = True
+    if not srt_path or not srt_path.exists():
+        logger.warning("Captions missing, rendering without subtitles")
+        subtitles_enabled = False
+
+    subtitled = hook_draw
+    if subtitles_enabled:
+        subtitled = ffmpeg.filter(
+            hook_draw,
+            "subtitles",
+            srt_path.as_posix(),
+            force_style=(
+                "FontName=Arial,FontSize=38,PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,"
+                "Outline=2,Alignment=2,MarginV=120"
+            ),
+        )
 
     audio = ffmpeg.input(audio_path.as_posix())
     ffmpeg_cmd = ffmpeg.output(
@@ -310,11 +322,17 @@ def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
     srt_path = platform_dir / f"captions_{script.id}_{timestamp}.srt"
 
     generate_voiceover(voice_text, audio_path)
-    srt_path, duration = generate_srt(voice_text, audio_path, srt_path)
+    try:
+        srt_path, duration = generate_captions(voice_text, audio_path, srt_path)
+    except Exception as exc:
+        logger.warning("Caption generation failed, rendering without subtitles: %s", exc)
+        srt_path = None
+        duration = AudioSegment.from_file(audio_path).duration_seconds
     if not audio_path.exists() or audio_path.stat().st_size == 0:
         raise FileNotFoundError(f"Audio file missing or empty: {audio_path}")
-    if not srt_path.exists():
-        raise FileNotFoundError(f"Caption file missing: {srt_path}")
+    if srt_path and not srt_path.exists():
+        logger.warning("Caption file missing, rendering without subtitles: %s", srt_path)
+        srt_path = None
 
     background_path, background_is_video = _select_background(payload.get("topic", "business"))
     if background_path and not background_path.exists():
@@ -332,8 +350,8 @@ def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
     )
     logger.info("Video rendered: %s", video_path)
 
-    rel_video = str(video_path.relative_to(OUTPUT_DIR))
-    rel_srt = str(srt_path.relative_to(OUTPUT_DIR))
+    rel_video = str(Path(video_path).relative_to(OUTPUT_DIR))
+    rel_srt = str(srt_path.relative_to(OUTPUT_DIR)) if srt_path else ""
     output_payload = {
         "script_id": script.id,
         "video_path": rel_video,
@@ -346,7 +364,8 @@ def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
 
     video_kind = "VIDEO_MP4" if script.platform == "tiktok" else "SHORT_VIDEO_MP4"
     insert_output(script.platform, video_kind, output_payload)
-    insert_output(script.platform, "SRT", output_payload)
+    if srt_path:
+        insert_output(script.platform, "SRT", output_payload)
     insert_output(
         script.platform,
         "CAPTION_HASHTAGS" if script.platform == "tiktok" else "TITLE_DESC_TAGS",
