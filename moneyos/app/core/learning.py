@@ -3,7 +3,7 @@ import random
 from datetime import datetime
 from typing import Any
 
-from moneyos.app.core.db import get_connection
+from app.core.db import get_connection
 
 
 def list_experiments() -> list[dict[str, Any]]:

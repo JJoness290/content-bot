@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from moneyos.app.core.db import get_connection
+from app.core.db import get_connection
 
 
 def create_script_item(platform: str, topic: str, script: dict[str, Any]) -> dict[str, Any]:

@@ -15,7 +15,7 @@ import ffmpeg
 import requests
 from pydub import AudioSegment
 
-from moneyos.app.core.video_queue import insert_output, update_script_payload
+from app.core.video_queue import insert_output, update_script_payload
 
 ROOT = Path(__file__).resolve().parents[2]
 ASSETS_DIR = ROOT / "assets"

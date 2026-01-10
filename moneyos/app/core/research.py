@@ -1,6 +1,6 @@
 from typing import Any
 
-from moneyos.app.core import notifier
+from app.core import notifier
 
 
 def fetch_summary(url: str) -> dict[str, Any]:

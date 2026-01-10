@@ -19,7 +19,7 @@ BOOTSTRAP_ERROR_LOG = LOG_DIR / "bootstrap_error.log"
 VENV_DIR = ROOT / ".venv"
 
 if APP_DIR.exists():
-    # Ensure imports like `from moneyos.app.core import db` work regardless of cwd.
+    # Ensure imports like `from app.core import db` work regardless of cwd.
     root_str = str(ROOT)
     if root_str not in sys.path:
         sys.path.insert(0, root_str)
@@ -109,7 +109,7 @@ def install_requirements() -> None:
 
 
 def init_database() -> None:
-    from moneyos.app.core import db
+    from app.core import db
 
     db.run_migrations()
     db.seed_data()

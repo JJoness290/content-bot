@@ -3,14 +3,14 @@ import json
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from moneyos.app.core import safety
-from moneyos.app.core.video_pipeline import (
+from app.core import safety
+from app.core.video_pipeline import (
     ScriptItem,
     ffmpeg_available,
     generate_script,
     generate_video_for_script,
 )
-from moneyos.app.core.video_queue import create_script_item, list_outputs_for_script, list_scripts
+from app.core.video_queue import create_script_item, list_outputs_for_script, list_scripts
 
 router = APIRouter(prefix="/youtube")
 

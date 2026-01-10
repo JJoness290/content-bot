@@ -3,8 +3,8 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from moneyos.app.core import content_autopilot, runtime
-from moneyos.app.routes import (
+from app.core import content_autopilot, runtime
+from app.routes import (
     api_assets,
     api_autopilot,
     assets,

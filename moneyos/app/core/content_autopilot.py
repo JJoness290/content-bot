@@ -4,15 +4,15 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
-from moneyos.app.core import audit, notifier
-from moneyos.app.core.asset_strategy import choose_strategy
-from moneyos.app.core.content_generator import (
+from app.core import audit, notifier
+from app.core.asset_strategy import choose_strategy
+from app.core.content_generator import (
     extract_keywords,
     generate_autopilot_draft,
     generate_custom_medium_article,
 )
-from moneyos.app.core.db import get_connection
-from moneyos.app.core.task_manager import create_task
+from app.core.db import get_connection
+from app.core.task_manager import create_task
 
 
 @dataclass

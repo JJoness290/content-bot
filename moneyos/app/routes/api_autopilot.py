@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from moneyos.app.core import content_autopilot
+from app.core import content_autopilot
 
 router = APIRouter(prefix="/api/autopilot")
 

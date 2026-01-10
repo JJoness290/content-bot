@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
-from moneyos.app.core import content_autopilot, safety
+from app.core import content_autopilot, safety
 
 router = APIRouter(prefix="/settings")
 

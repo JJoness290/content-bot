@@ -170,7 +170,7 @@ def run_migrations() -> None:
 
 
 def _regenerate_draft_assets(conn: sqlite3.Connection) -> None:
-    from moneyos.app.core import content_generator
+    from app.core import content_generator
 
     rows = conn.execute(
         "SELECT id, title, content_md, metadata_json FROM assets WHERE status = ?",

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
-from moneyos.app.core import audit, notifier, safety
+from app.core import audit, notifier, safety
 
 router = APIRouter(prefix="/logs")
 

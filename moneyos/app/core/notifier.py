@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from moneyos.app.core.db import get_connection
+from app.core.db import get_connection
 
 
 def add_notification(level: str, message: str) -> None:
