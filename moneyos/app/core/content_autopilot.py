@@ -8,6 +8,7 @@ from typing import Any
 
 from app.core import audit, notifier
 from app.core.asset_strategy import choose_strategy
+from app.core.idea_engine import decide_next_content
 from app.core.content_generator import (
     extract_keywords,
     generate_autopilot_draft,
@@ -16,7 +17,7 @@ from app.core.content_generator import (
 from app.core.db import get_connection
 from app.core.task_manager import create_task
 from app.core.video_pipeline import generate_script
-from app.core.video_queue import create_script_item, init_video_queue_db
+from app.core.video_queue import create_script_item, init_video_queue_db, list_scripts
 
 
 @dataclass
@@ -36,6 +37,7 @@ class AutopilotSettings:
 SETTINGS = AutopilotSettings()
 JOB_ID = "content_autopilot_tick"
 AUTOPILOT_INTERVAL_SECONDS = 60
+VIDEO_QUEUE_TARGET = 3
 logger = logging.getLogger(__name__)
 
 
@@ -470,6 +472,16 @@ def _enqueue_video_script(topic: str, platform: str) -> None:
         logger.warning("Failed to enqueue video script for %s: %s", platform, exc)
 
 
+def _autonomous_video_tick() -> str:
+    choice = decide_next_content()
+    platform = choice["platform"]
+    backlog = list_scripts(platform)
+    if len(backlog) >= VIDEO_QUEUE_TARGET:
+        return f"Skipped script enqueue for {platform} (queue size {len(backlog)})."
+    _enqueue_video_script(choice["topic"], platform)
+    return f"Queued {platform} script: {choice['topic']}"
+
+
 def tick() -> dict[str, Any]:
     now_dt = _now()
     now = now_dt.isoformat()
@@ -585,8 +597,14 @@ def autopilot_status() -> dict[str, Any]:
 async def autopilot_loop(stop_event: asyncio.Event, interval_seconds: int = AUTOPILOT_INTERVAL_SECONDS) -> None:
     logger.info("Content autopilot loop started (interval=%ss).", interval_seconds)
     while not stop_event.is_set():
-        result = await asyncio.to_thread(tick)
-        logger.info("Content autopilot tick: %s", result.get("decision"))
+        state = get_autopilot_state()
+        if state["enabled"]:
+            result = await asyncio.to_thread(tick)
+            logger.info("Content autopilot tick: %s", result.get("decision"))
+            enqueue_result = await asyncio.to_thread(_autonomous_video_tick)
+            logger.info("Content autopilot video: %s", enqueue_result)
+        else:
+            logger.info("Content autopilot disabled; skipping tick.")
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
         except asyncio.TimeoutError:

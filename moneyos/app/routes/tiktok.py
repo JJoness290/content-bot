@@ -3,6 +3,7 @@ import json
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from app.core.idea_engine import decide_next_content
 from app.core import safety
 from app.core.video_pipeline import (
     ScriptItem,
@@ -49,9 +50,10 @@ def tiktok(request: Request):
 
 
 @router.post("/script")
-def create_script(topic: str = Form(...)):
-    script = generate_script(topic, "tiktok")
-    create_script_item("tiktok", topic, script)
+def create_script(topic: str | None = Form(None)):
+    selected_topic = topic or decide_next_content(platform="tiktok")["topic"]
+    script = generate_script(selected_topic, "tiktok")
+    create_script_item("tiktok", selected_topic, script)
     return RedirectResponse(url="/tiktok", status_code=303)
 
 
