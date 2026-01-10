@@ -7,3 +7,8 @@ safety:
   block_actions:
     - SPEND
     - RISK
+autopilot:
+  interval_minutes: 15
+  platforms:
+    - tiktok
+    - youtube

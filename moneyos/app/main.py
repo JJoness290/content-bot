@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app.core import content_autopilot, runtime
+from app.core import content_autopilot, runtime, video_autopilot
 from app.core.video_queue import init_video_queue_db
 from app.routes import (
     api_assets,
@@ -29,7 +29,7 @@ app.state.templates = templates
 templates.env.globals["limited_mode"] = runtime.is_limited_mode
 templates.env.globals["bootstrap_error"] = runtime.get_bootstrap_error
 templates.env.globals["health_status"] = runtime.health_status
-templates.env.globals["autopilot_status"] = content_autopilot.autopilot_status
+templates.env.globals["autopilot_status"] = video_autopilot.autopilot_status
 
 scheduler = BackgroundScheduler()
 app.state.scheduler = scheduler
@@ -51,6 +51,8 @@ app.include_router(youtube.router)
 @app.on_event("startup")
 def start_scheduler() -> None:
     init_video_queue_db()
+    config = video_autopilot.init_video_autopilot_state()
+    video_autopilot.schedule_job(scheduler, config["interval_minutes"])
     if not scheduler.running:
         state = content_autopilot.get_autopilot_state()
         if state["enabled"]:
