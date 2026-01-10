@@ -210,17 +210,19 @@ def render_video(
     hook: str,
     audio_path: Path,
     srt_path: Path,
-    output_path: Path,
     duration: float,
     background_path: Path | None,
     background_is_video: bool,
-) -> None:
+    platform: str,
+    script_id: int,
+) -> Path:
     ensure_dirs()
     audio_path = audio_path.resolve()
     srt_path = srt_path.resolve()
-    output_path = output_path.resolve()
     background_path = background_path.resolve() if background_path else None
-    output_path = output_path.resolve()
+    output_dir = OUTPUT_DIR / platform
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = (output_dir / f"video_{script_id}.mp4").resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     if output_path.suffix.lower() != ".mp4":
         raise ValueError(f"Output path must end with .mp4: {output_path}")
@@ -273,11 +275,11 @@ def render_video(
     ffmpeg_cmd = ffmpeg.output(
         subtitled,
         audio,
-        output_path.as_posix(),
+        str(output_path),
         vcodec="libx264",
         acodec="aac",
         pix_fmt="yuv420p",
-        r=30,
+        r=25,
         shortest=1,
         movflags="+faststart",
     )
@@ -288,6 +290,7 @@ def render_video(
         stderr = exc.stderr.decode(errors="ignore") if exc.stderr else ""
         logger.error("FFMPEG STDERR: %s", stderr)
         raise RuntimeError(f"FFmpeg failed: {stderr}") from exc
+    return output_path
 
 
 def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
@@ -301,9 +304,6 @@ def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
     platform_dir = TIKTOK_DIR if script.platform == "tiktok" else YOUTUBE_DIR
     audio_path = platform_dir / f"voice_{script.id}_{timestamp}.mp3"
     srt_path = platform_dir / f"captions_{script.id}_{timestamp}.srt"
-    video_path = platform_dir / f"video_{script.id}_{timestamp}.mp4"
-    video_path = video_path.resolve()
-    video_path.parent.mkdir(parents=True, exist_ok=True)
 
     generate_voiceover(voice_text, audio_path)
     srt_path, duration = generate_srt(voice_text, audio_path, srt_path)
@@ -315,15 +315,16 @@ def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
     background_path, background_is_video = _select_background(payload.get("topic", "business"))
     if background_path and not background_path.exists():
         raise FileNotFoundError(f"Background asset missing: {background_path}")
-    render_video(
+    video_path = render_video(
         script_text=voice_text,
         hook=payload["hook"],
         audio_path=audio_path,
         srt_path=srt_path,
-        output_path=video_path,
         duration=duration,
         background_path=background_path,
         background_is_video=background_is_video,
+        platform=script.platform,
+        script_id=script.id,
     )
     logger.info("Video rendered: %s", video_path)
 
