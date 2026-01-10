@@ -4,6 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.core import content_autopilot, runtime
+from app.core.video_queue import init_video_queue_db
 from app.routes import (
     api_assets,
     api_autopilot,
@@ -49,6 +50,7 @@ app.include_router(youtube.router)
 
 @app.on_event("startup")
 def start_scheduler() -> None:
+    init_video_queue_db()
     if not scheduler.running:
         state = content_autopilot.get_autopilot_state()
         if state["enabled"]:
