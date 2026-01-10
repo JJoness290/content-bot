@@ -270,42 +270,51 @@ def render_video(
         enable="between(t,0,3)",
     )
 
-    subtitles_enabled = True
-    if not srt_path or not Path(srt_path).exists():
-        logger.warning("Captions missing, rendering without subtitles")
-        subtitles_enabled = False
-
-    subtitled = hook_draw
-    if subtitles_enabled:
-        subtitled = ffmpeg.filter(
-            hook_draw,
-            "subtitles",
-            srt_path,
-            force_style=(
-                "FontName=Arial,FontSize=38,PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,"
-                "Outline=2,Alignment=2,MarginV=120"
-            ),
-        )
-
     audio = ffmpeg.input(audio_path.as_posix())
-    ffmpeg_cmd = ffmpeg.output(
-        subtitled,
-        audio,
-        output_path,
-        vcodec="libx264",
-        acodec="aac",
-        pix_fmt="yuv420p",
-        r=25,
-        shortest=1,
-        movflags="+faststart",
-    )
-    logger.info("FFmpeg command: %s", " ".join(ffmpeg_cmd.compile()))
-    try:
-        ffmpeg_cmd.run(overwrite_output=True)
-    except ffmpeg.Error as exc:
-        stderr = exc.stderr.decode(errors="ignore") if exc.stderr else ""
-        logger.error("FFMPEG STDERR: %s", stderr)
-        raise RuntimeError(f"FFmpeg failed: {stderr}") from exc
+    subtitles_available = bool(srt_path) and Path(srt_path).exists()
+    if not subtitles_available:
+        logger.warning("Captions missing, rendering without subtitles")
+
+    last_error = ""
+    for attempt in (1, 2):
+        use_subtitles = subtitles_available and attempt == 1
+        if use_subtitles:
+            logger.info("FFmpeg render attempt %s with subtitles", attempt)
+            render_stream = ffmpeg.filter(
+                hook_draw,
+                "subtitles",
+                srt_path,
+                force_style=(
+                    "FontName=Arial,FontSize=38,PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,"
+                    "Outline=2,Alignment=2,MarginV=120"
+                ),
+            )
+        else:
+            logger.info("FFmpeg render attempt %s without subtitles", attempt)
+            render_stream = hook_draw
+
+        ffmpeg_cmd = ffmpeg.output(
+            render_stream,
+            audio,
+            output_path,
+            vcodec="libx264",
+            acodec="aac",
+            pix_fmt="yuv420p",
+            r=25,
+            shortest=1,
+            movflags="+faststart",
+        )
+        logger.info("FFmpeg command: %s", " ".join(ffmpeg_cmd.compile()))
+        try:
+            ffmpeg_cmd.run(overwrite_output=True)
+            break
+        except ffmpeg.Error as exc:
+            last_error = exc.stderr.decode(errors="ignore") if exc.stderr else ""
+            logger.error("FFMPEG STDERR: %s", last_error)
+
+    if not Path(output_path).exists():
+        raise RuntimeError(f"FFmpeg failed after retry: {last_error}")
+
     return output_path
 
 
