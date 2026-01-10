@@ -214,13 +214,19 @@ def render_video(
     background_is_video: bool,
 ) -> None:
     ensure_dirs()
+    audio_path = audio_path.resolve()
+    srt_path = srt_path.resolve()
+    output_path = output_path.resolve()
+    background_path = background_path.resolve() if background_path else None
     size = "1080x1920"
     if background_path:
+        if not background_path.exists():
+            raise FileNotFoundError(f"Background asset missing: {background_path}")
         if background_is_video:
-            video_in = ffmpeg.input(str(background_path), stream_loop=-1)
+            video_in = ffmpeg.input(background_path.as_posix(), stream_loop=-1)
             video = video_in.filter("scale", 1080, 1920).filter("fps", fps=30)
         else:
-            video_in = ffmpeg.input(str(background_path), loop=1, framerate=30, t=duration)
+            video_in = ffmpeg.input(background_path.as_posix(), loop=1, framerate=30, t=duration)
             video = (
                 video_in.filter(
                     "zoompan",
@@ -252,26 +258,28 @@ def render_video(
 
     subtitled = hook_draw.filter(
         "subtitles",
-        filename=str(srt_path),
+        filename=srt_path.as_posix(),
         force_style="FontName=Arial,FontSize=38,PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,Outline=2,Alignment=2,MarginV=120",
     )
 
-    audio = ffmpeg.input(str(audio_path))
-    (
-        ffmpeg.output(
-            subtitled,
-            audio,
-            str(output_path),
-            vcodec="libx264",
-            acodec="aac",
-            pix_fmt="yuv420p",
-            r=30,
-            shortest=1,
-            movflags="+faststart",
-        )
-        .overwrite_output()
-        .run(quiet=True)
+    audio = ffmpeg.input(audio_path.as_posix())
+    ffmpeg_cmd = ffmpeg.output(
+        subtitled,
+        audio,
+        output_path.as_posix(),
+        vcodec="libx264",
+        acodec="aac",
+        pix_fmt="yuv420p",
+        r=30,
+        shortest=1,
+        movflags="+faststart",
     )
+    try:
+        ffmpeg_cmd.run(overwrite_output=True)
+    except ffmpeg.Error as exc:
+        stderr = exc.stderr.decode(errors="ignore") if exc.stderr else ""
+        print("FFMPEG STDERR:", stderr)
+        raise
 
 
 def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
@@ -289,8 +297,14 @@ def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
 
     generate_voiceover(voice_text, audio_path)
     srt_path, duration = generate_srt(voice_text, audio_path, srt_path)
+    if not audio_path.exists() or audio_path.stat().st_size == 0:
+        raise FileNotFoundError(f"Audio file missing or empty: {audio_path}")
+    if not srt_path.exists():
+        raise FileNotFoundError(f"Caption file missing: {srt_path}")
 
     background_path, background_is_video = _select_background(payload.get("topic", "business"))
+    if background_path and not background_path.exists():
+        raise FileNotFoundError(f"Background asset missing: {background_path}")
     render_video(
         script_text=voice_text,
         hook=payload["hook"],
