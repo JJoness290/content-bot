@@ -1,4 +1,6 @@
+import asyncio
 import json
+import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -13,6 +15,8 @@ from app.core.content_generator import (
 )
 from app.core.db import get_connection
 from app.core.task_manager import create_task
+from app.core.video_pipeline import generate_script
+from app.core.video_queue import create_script_item, init_video_queue_db
 
 
 @dataclass
@@ -31,6 +35,8 @@ class AutopilotSettings:
 
 SETTINGS = AutopilotSettings()
 JOB_ID = "content_autopilot_tick"
+AUTOPILOT_INTERVAL_SECONDS = 60
+logger = logging.getLogger(__name__)
 
 
 def _now() -> datetime:
@@ -436,6 +442,7 @@ def create_draft(decision: dict[str, Any], asset_payload: dict[str, Any] | None 
     )
 
     notifier.add_notification("INFO", f"Draft created (asset #{asset_id}).")
+    _enqueue_video_script(asset["title"], asset.get("platform", SETTINGS.platform_default))
     audit.log_action(
         name="content_autopilot_tick",
         action_type="decision",
@@ -450,6 +457,17 @@ def create_draft(decision: dict[str, Any], asset_payload: dict[str, Any] | None 
         reason="; ".join(decision.get("reasons", [])),
     )
     return asset_id
+
+
+def _enqueue_video_script(topic: str, platform: str) -> None:
+    if platform not in {"tiktok", "youtube"}:
+        return
+    try:
+        init_video_queue_db()
+        payload = generate_script(topic, platform)
+        create_script_item(platform, topic, payload)
+    except Exception as exc:
+        logger.warning("Failed to enqueue video script for %s: %s", platform, exc)
 
 
 def tick() -> dict[str, Any]:
@@ -562,3 +580,14 @@ def autopilot_status() -> dict[str, Any]:
         "interval_minutes": state["interval_minutes"],
         "last_run_result": state["last_run_result"],
     }
+
+
+async def autopilot_loop(stop_event: asyncio.Event, interval_seconds: int = AUTOPILOT_INTERVAL_SECONDS) -> None:
+    logger.info("Content autopilot loop started (interval=%ss).", interval_seconds)
+    while not stop_event.is_set():
+        result = await asyncio.to_thread(tick)
+        logger.info("Content autopilot tick: %s", result.get("decision"))
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
+        except asyncio.TimeoutError:
+            continue
