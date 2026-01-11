@@ -90,18 +90,8 @@ def _rotate(pool: list[str], seed: int) -> list[str]:
     return pool[offset:] + pool[:offset]
 
 
-def _word_limit(text: str, min_words: int, max_words: int) -> str:
-    words = text.split()
-    if len(words) < min_words:
-        filler = (
-            " Keep it simple: track spending, cut one leak, and automate a small transfer each payday."
-        )
-        while len(words) < min_words:
-            text = f"{text} {filler}"
-            words = text.split()
-    if len(words) > max_words:
-        text = " ".join(words[:max_words])
-    return text
+def _count_words(text: str) -> int:
+    return len(text.split())
 
 
 def decide_next_content(platform: str) -> dict[str, Any]:
@@ -150,21 +140,31 @@ def _unique_lines(lines: list[str]) -> list[str]:
     return result
 
 
+def _beat(text: str, min_words: int, max_words: int) -> str:
+    words = text.split()
+    if len(words) < min_words:
+        return ""
+    if len(words) > max_words:
+        return " ".join(words[:max_words])
+    return text
+
+
 def build_script(idea: dict[str, Any], platform: str) -> str:
     hook = idea["hook"]
     topic = idea["topic"]
     beats = [
-        hook,
-        f"New rule: {topic}.",
-        "Escalation: it turns into a daily trap fast.",
-        "Twist: the thing you blame isn’t the real cause.",
-        "Payoff: you notice it everywhere, then you stop.",
+        _beat(hook, 10, 12),
+        _beat(f"Escalation: {topic} flips your day fast.", 14, 16),
+        _beat("New angle: it’s not your schedule, it’s the tiny ritual loop.", 18, 20),
+        _beat("Contrast: you blame the big thing, but it’s a tiny trigger instead.", 20, 22),
+        _beat("Fresh idea: change the first 30 seconds and the rest obeys.", 22, 24),
+        _beat("Bigger twist: your ‘good habit’ is actually the trap door.", 24, 26),
+        _beat("Final punch: break it once and the whole vibe resets.", 24, 26),
+        _beat("Stop there. No recap. Keep scrolling.", 8, 12),
     ]
     beats = _unique_lines([beat for beat in beats if beat])
     script = "\n".join(beats)
-    script = _word_limit(
-        script,
-        150 if platform == "tiktok" else 130,
-        165 if platform == "tiktok" else 180,
-    )
+    word_count = _count_words(script)
+    if platform == "tiktok" and (word_count < 150 or word_count > 165 or len(beats) != 8):
+        raise RuntimeError("script_beats_invalid")
     return script

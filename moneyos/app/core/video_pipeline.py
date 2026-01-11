@@ -480,16 +480,11 @@ def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
 
     update_progress(script.platform, "voice_generation", 25, 90)
     duration = 0.0
-    for attempt in range(3):
-        generate_voiceover(voice_text, audio_path)
-        try:
-            duration = AudioSegment.from_file(audio_path).duration_seconds
-        except Exception:
-            duration = 0.0
-        if script.platform != "tiktok" or duration >= 60:
-            break
-        voice_text = manager.extend_script(voice_text)
-        voice_text = rules.extend_for_duration(voice_text, 62.0)
+    generate_voiceover(voice_text, audio_path)
+    try:
+        duration = AudioSegment.from_file(audio_path).duration_seconds
+    except Exception:
+        duration = 0.0
     update_progress(script.platform, "visual_selection", 45, 75)
     try:
         srt_path, duration = generate_captions(voice_text, audio_path, srt_path)
