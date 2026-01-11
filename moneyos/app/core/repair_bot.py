@@ -70,7 +70,8 @@ def auto_repair(acl: dict[str, Any], target_duration: float) -> dict[str, Any]:
     ) + estimate_duration(outro_text, outro_pacing)
     if total_estimate < target_duration:
         remaining = target_duration - total_estimate
-        outro["narration"] = extend_outro_text(outro_text, remaining, outro_pacing, rng)
+        base_duration = estimate_duration(outro_text, outro_pacing)
+        outro["narration"] = extend_outro_text(outro_text, base_duration + remaining, outro_pacing, rng)
         acl["outro"] = outro
         logger.info("Repair bot extended outro to hit duration.")
 

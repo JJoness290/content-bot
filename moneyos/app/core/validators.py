@@ -13,6 +13,14 @@ def validate_acl(acl: dict[str, Any]) -> list[str]:
     hook = acl.get("hook", {})
     if not isinstance(hook, dict) or not hook.get("narration"):
         errors.append("hook_missing")
+    phases = acl.get("phases", [])
+    if not isinstance(phases, list) or not phases:
+        errors.append("phases_missing")
+    else:
+        expected = ["hook", "explain", "reinforce", "close"]
+        phase_types = [phase.get("type") for phase in phases if isinstance(phase, dict)]
+        if phase_types != expected:
+            errors.append("phases_invalid")
     beats = acl.get("beats", [])
     if not isinstance(beats, list):
         errors.append("beats_missing")

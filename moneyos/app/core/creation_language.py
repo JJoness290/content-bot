@@ -54,6 +54,12 @@ def build_acl(idea: dict[str, Any], platform: str) -> dict[str, Any]:
             "pacing": pacing,
             "topic": topic,
         },
+        "phases": [
+            {"type": "hook", "target_seconds": 6},
+            {"type": "explain", "target_seconds": 25},
+            {"type": "reinforce", "target_seconds": 20},
+            {"type": "close", "target_seconds": 9},
+        ],
         "hook": {
             "narration": hook or "Quick reality check: your phone is way too convincing.",
             "energy": "high",
