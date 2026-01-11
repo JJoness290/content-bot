@@ -18,6 +18,7 @@ import subprocess
 
 from app.core.code_repair_bot import get_code_repair_bot
 from app.core.video_queue import insert_output, update_script_payload
+from app.core.video_rules_manager import VideoRulesManager
 
 ROOT = Path(__file__).resolve().parents[2]
 ASSETS_DIR = ROOT / "assets"
@@ -244,6 +245,7 @@ def render_video(
     script_id: int,
 ) -> Path:
     bot = get_code_repair_bot()
+    rules = VideoRulesManager()
     ensure_dirs()
     audio_path = audio_path.resolve()
     srt_path = srt_path.resolve().as_posix() if srt_path else None
@@ -263,38 +265,30 @@ def render_video(
         *,
         output_file: Path,
         include_subtitles: bool,
-        include_background: bool,
         include_audio: bool,
+        plan_duration: float,
+        plan_visuals: int,
     ) -> list[str]:
         cmd: list[str] = ["ffmpeg", "-y"]
-        if include_background and background_path:
-            if not background_path.exists():
-                logger.warning("Background asset missing, using fallback: %s", background_path)
-                include_background = False
-        if include_background and background_path:
-            if background_is_video:
-                cmd += ["-stream_loop", "-1", "-i", background_path.as_posix()]
-            else:
-                cmd += [
-                    "-loop",
-                    "1",
-                    "-framerate",
-                    "30",
-                    "-t",
-                    str(duration),
-                    "-i",
-                    background_path.as_posix(),
-                ]
-        else:
-            cmd += ["-f", "lavfi", "-i", f"color=c=black:s={size}:d={duration}"]
+        segment_duration = plan_duration / plan_visuals
+        colors = list(rules.color_sequence(plan_visuals))
+        for color in colors:
+            cmd += ["-f", "lavfi", "-i", f"color=c={color}:s={size}:d={segment_duration}"]
         if include_audio:
             cmd += ["-i", audio_path.as_posix()]
 
-        vf_filters: list[str] = []
+        filter_parts = []
+        concat_inputs = "".join(f"[{idx}:v]" for idx in range(plan_visuals))
+        filter_parts.append(f"{concat_inputs}concat=n={plan_visuals}:v=1:a=0[v0]")
         if include_subtitles and srt_path:
-            vf_filters.append(f"subtitles={srt_path}")
-        if vf_filters:
-            cmd += ["-vf", ",".join(vf_filters)]
+            filter_parts.append(f"[v0]subtitles={srt_path}[vout]")
+            video_map = "[vout]"
+        else:
+            video_map = "[v0]"
+        filter_complex = ";".join(filter_parts)
+        cmd += ["-filter_complex", filter_complex, "-map", video_map]
+        if include_audio:
+            cmd += ["-map", f"{plan_visuals}:a"]
 
         cmd += ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", "25"]
         if include_audio:
@@ -320,13 +314,15 @@ def render_video(
 
     last_error = ""
     memory = bot.memory
+    plan = rules.plan_visuals(platform, duration)
+    rules.validate_plan(platform, duration, plan)
     include_subtitles = subtitles_available and not memory.disabled_subtitles
-    include_background = not memory.disabled_backgrounds and background_path is not None
     ffmpeg_cmd = _build_ffmpeg_cmd(
         output_file=output_path,
         include_subtitles=include_subtitles,
-        include_background=include_background,
         include_audio=True,
+        plan_duration=plan.total_duration,
+        plan_visuals=plan.visuals,
     )
     logger.info("FFmpeg command: %s", " ".join(ffmpeg_cmd))
     ok, stderr = _run_ffmpeg(ffmpeg_cmd)
@@ -343,8 +339,9 @@ def render_video(
         ffmpeg_cmd = _build_ffmpeg_cmd(
             output_file=output_path,
             include_subtitles=False,
-            include_background=include_background,
             include_audio=True,
+            plan_duration=plan.total_duration,
+            plan_visuals=plan.visuals,
         )
         logger.info("FFmpeg command retry: %s", " ".join(ffmpeg_cmd))
         ok, stderr = _run_ffmpeg(ffmpeg_cmd)
@@ -362,8 +359,9 @@ def render_video(
         safe_cmd = _build_ffmpeg_cmd(
             output_file=safe_output_path,
             include_subtitles=False,
-            include_background=False,
             include_audio=True,
+            plan_duration=plan.total_duration,
+            plan_visuals=plan.visuals,
         )
         logger.info("FFmpeg safe command: %s", " ".join(safe_cmd))
         ok, stderr = _run_ffmpeg(safe_cmd)
@@ -374,8 +372,9 @@ def render_video(
             safe_cmd = _build_ffmpeg_cmd(
                 output_file=safe_output_path,
                 include_subtitles=False,
-                include_background=False,
                 include_audio=False,
+                plan_duration=plan.total_duration,
+                plan_visuals=plan.visuals,
             )
             logger.info("FFmpeg safe command no-audio: %s", " ".join(safe_cmd))
             ok, stderr = _run_ffmpeg(safe_cmd)
@@ -393,27 +392,36 @@ def render_video(
 def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
     ensure_dirs()
     bot = get_code_repair_bot()
+    rules = VideoRulesManager()
     ffmpeg_ready = ffmpeg_available()
     if not ffmpeg_ready:
         logger.error("FFmpeg not available, cannot generate video.")
 
     payload = script.payload
     voice_text = _script_to_voice_text(payload)
+    if script.platform == "tiktok":
+        voice_text = rules.ensure_word_count(voice_text, 140, 160)
     timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
     platform_dir = TIKTOK_DIR if script.platform == "tiktok" else YOUTUBE_DIR
     audio_path = platform_dir / f"voice_{script.id}_{timestamp}.mp3"
     srt_path = platform_dir / f"captions_{script.id}_{timestamp}.srt"
 
-    generate_voiceover(voice_text, audio_path)
+    duration = 0.0
+    for attempt in range(3):
+        generate_voiceover(voice_text, audio_path)
+        try:
+            duration = AudioSegment.from_file(audio_path).duration_seconds
+        except Exception:
+            duration = 0.0
+        if script.platform != "tiktok" or duration >= 60:
+            break
+        voice_text = rules.extend_for_duration(voice_text, 62.0)
     try:
         srt_path, duration = generate_captions(voice_text, audio_path, srt_path)
     except Exception as exc:
         logger.warning("Caption generation failed, rendering without subtitles: %s", exc)
         srt_path = None
-        try:
-            duration = AudioSegment.from_file(audio_path).duration_seconds
-        except Exception:
-            duration = 1.0
+        duration = max(duration, 1.0)
     if not audio_path.exists() or audio_path.stat().st_size == 0:
         logger.warning("Audio missing, generating silent fallback: %s", audio_path)
         silent = AudioSegment.silent(duration=1000)
@@ -456,7 +464,11 @@ def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
         bot.apply_fix(
             signature,
             str(exc),
-            context={"fix": "ensure_output_path", "output_path": str(output_path)},
+            context={
+                "fix": "ensure_output_path",
+                "output_path": str(output_path),
+                "duration": duration,
+            },
         )
         video_path = output_path
     logger.info("Video rendered: %s", video_path)

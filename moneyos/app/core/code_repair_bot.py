@@ -12,6 +12,8 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any, Callable
 
+from app.core.video_rules_manager import VideoRulesManager
+
 ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = ROOT / "data"
 MEMORY_PATH = DATA_DIR / "repair_bot_memory.json"
@@ -103,7 +105,8 @@ class CodeRepairBot:
             if output_path:
                 path = Path(output_path)
                 path.parent.mkdir(parents=True, exist_ok=True)
-                applied = self._safe_black_video(path)
+                duration = float(context.get("duration", 62.0))
+                applied = self._safe_black_video(path, duration=duration)
         if "unable to choose an output format for" in stderr_lower:
             applied = True
         if "subtitles" in stderr_lower or ".srt" in stderr_lower or "caption" in stderr_lower:
@@ -167,17 +170,28 @@ class CodeRepairBot:
         os.execv(sys.executable, [sys.executable] + sys.argv)
 
     def _safe_black_video(self, output_path: Path, duration: float = 1.0) -> bool:
-        cmd = [
-            "ffmpeg",
-            "-y",
-            "-f",
-            "lavfi",
-            "-i",
-            f"color=c=black:s=1080x1920:d={duration}",
+        rules = VideoRulesManager()
+        plan = rules.plan_visuals("tiktok", max(duration, 62.0))
+        colors = list(rules.color_sequence(plan.visuals))
+        cmd = ["ffmpeg", "-y"]
+        segment_duration = plan.segment_duration
+        for color in colors:
+            cmd += ["-f", "lavfi", "-i", f"color=c={color}:s=1080x1920:d={segment_duration}"]
+        concat_inputs = "".join(f"[{idx}:v]" for idx in range(plan.visuals))
+        filter_complex = f"{concat_inputs}concat=n={plan.visuals}:v=1:a=0[v0]"
+        cmd += [
+            "-filter_complex",
+            filter_complex,
+            "-map",
+            "[v0]",
             "-c:v",
             "libx264",
             "-pix_fmt",
             "yuv420p",
+            "-r",
+            "25",
+            "-movflags",
+            "+faststart",
             output_path.as_posix(),
         ]
         result = subprocess.run(cmd, capture_output=True, text=True)
