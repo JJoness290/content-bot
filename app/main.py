@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -20,10 +22,17 @@ from moneyos.app.routes import (
 
 app = FastAPI(title="MoneyOS")
 
-app.mount("/static", StaticFiles(directory="moneyos/app/static"), name="static")
-app.mount("/output", StaticFiles(directory="moneyos/output"), name="output")
+ROOT_DIR = Path(__file__).resolve().parent.parent
+MONEYOS_DIR = ROOT_DIR / "moneyos"
+APP_DIR = MONEYOS_DIR / "app"
+OUTPUT_DIR = MONEYOS_DIR / "output"
+if not OUTPUT_DIR.exists():
+    OUTPUT_DIR = ROOT_DIR / "output"
 
-templates = Jinja2Templates(directory="moneyos/app/templates")
+app.mount("/static", StaticFiles(directory=str(APP_DIR / "static")), name="static")
+app.mount("/output", StaticFiles(directory=str(OUTPUT_DIR)), name="output")
+
+templates = Jinja2Templates(directory=str(APP_DIR / "templates"))
 app.state.templates = templates
 templates.env.globals["limited_mode"] = runtime.is_limited_mode
 templates.env.globals["bootstrap_error"] = runtime.get_bootstrap_error

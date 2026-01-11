@@ -29,12 +29,14 @@ from app.routes import (
 
 app = FastAPI(title="MoneyOS")
 
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
-OUTPUT_DIR = Path(__file__).resolve().parents[1] / "output"
+APP_DIR = Path(__file__).resolve().parent
+
+app.mount("/static", StaticFiles(directory=str(APP_DIR / "static")), name="static")
+OUTPUT_DIR = APP_DIR.parent / "output"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/output", StaticFiles(directory=OUTPUT_DIR), name="output")
 
-templates = Jinja2Templates(directory="app/templates")
+templates = Jinja2Templates(directory=str(APP_DIR / "templates"))
 app.state.templates = templates
 templates.env.globals["limited_mode"] = runtime.is_limited_mode
 templates.env.globals["bootstrap_error"] = runtime.get_bootstrap_error
