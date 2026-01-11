@@ -94,6 +94,8 @@ class CodeRepairBot:
 
     def plan_repair(self, stderr: str) -> dict[str, Any]:
         stderr_lower = stderr.lower()
+        if "no_viable_voice" in stderr_lower or "voice_vibe_failed" in stderr_lower:
+            return {"action": "retry_voice"}
         if "subtitles" in stderr_lower or ".srt" in stderr_lower:
             return {"action": "disable_subtitles"}
         if "invalid argument" in stderr_lower or "filter" in stderr_lower:

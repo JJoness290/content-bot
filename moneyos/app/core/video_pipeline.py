@@ -22,6 +22,7 @@ from app.core.progress import update_progress
 from app.core.video_manager_bot import VideoManagerBot
 from app.core.video_queue import insert_output, update_script_payload
 from app.core.video_rules_manager import VideoRulesManager
+from app.core.voice_manager import VoiceManager
 
 ROOT = Path(__file__).resolve().parents[2]
 ASSETS_DIR = ROOT / "assets"
@@ -118,7 +119,14 @@ def generate_voiceover(text: str, output_path: Path) -> Path:
     bot = get_code_repair_bot()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        bot.retry_operation(lambda: asyncio.run(_edge_tts_save(text, output_path)), context={"op": "edge_tts"})
+        voice = VOICE_MANAGER.test_and_select("Most people are broke because of THIS habit.")
+        bot.retry_operation(
+            lambda: VOICE_MANAGER.synthesize(text, voice, rate="+15%"),
+            context={"op": "voice_select"},
+        )
+        if not VOICE_MANAGER.validate_voice(voice):
+            raise RuntimeError("voice_vibe_failed")
+        output_path.write_bytes((VOICE_MANAGER.output_dir / f"voice_{voice.name}.mp3").read_bytes())
         return output_path
     except Exception:
         try:
@@ -238,6 +246,7 @@ def _select_background(topic: str) -> tuple[Path | None, bool]:
 MANAGER_BOT = VideoManagerBot()
 RULES_MANAGER = VideoRulesManager()
 PREFLIGHT_VALIDATOR = PreflightValidator()
+VOICE_MANAGER = VoiceManager(OUTPUT_DIR / "voice_tests")
 
 
 def render_video(
