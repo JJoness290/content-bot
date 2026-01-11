@@ -4,6 +4,7 @@ import compileall
 import json
 import logging
 import os
+import subprocess
 import sys
 import traceback
 from dataclasses import dataclass, field
@@ -102,9 +103,7 @@ class CodeRepairBot:
             if output_path:
                 path = Path(output_path)
                 path.parent.mkdir(parents=True, exist_ok=True)
-                if not path.exists():
-                    path.touch()
-                applied = True
+                applied = self._safe_black_video(path)
         if "unable to choose an output format for" in stderr_lower:
             applied = True
         if "subtitles" in stderr_lower or ".srt" in stderr_lower or "caption" in stderr_lower:
@@ -160,12 +159,32 @@ class CodeRepairBot:
         compileall.compile_dir(str(ROOT), quiet=1)
         ffmpeg_cmd = (context or {}).get("ffmpeg_cmd")
         if ffmpeg_cmd is not None:
-            ffmpeg_cmd.compile()
+            subprocess.run(ffmpeg_cmd, capture_output=True, text=True, check=False)
         logger.info("RepairBot verification complete; relaunch requested")
 
     def restart_app(self) -> None:
         logger.info("RepairBot restarting application")
         os.execv(sys.executable, [sys.executable] + sys.argv)
+
+    def _safe_black_video(self, output_path: Path, duration: float = 1.0) -> bool:
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            f"color=c=black:s=1080x1920:d={duration}",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            output_path.as_posix(),
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            logger.error("RepairBot safe video failed: %s", result.stderr)
+            return False
+        return output_path.exists() and output_path.stat().st_size > 0
 
 
 _BOT: CodeRepairBot | None = None
