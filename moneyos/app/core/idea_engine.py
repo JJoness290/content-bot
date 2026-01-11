@@ -150,21 +150,19 @@ def _beat(text: str, min_words: int, max_words: int) -> str:
 
 
 def build_script(idea: dict[str, Any], platform: str) -> str:
-    hook = idea["hook"]
-    topic = idea["topic"]
     beats = [
-        _beat(hook, 10, 12),
-        _beat(f"Escalation: {topic} flips your day fast.", 14, 16),
-        _beat("New angle: it’s not your schedule, it’s the tiny ritual loop.", 18, 20),
-        _beat("Contrast: you blame the big thing, but it’s a tiny trigger instead.", 20, 22),
-        _beat("Fresh idea: change the first 30 seconds and the rest obeys.", 22, 24),
-        _beat("Bigger twist: your ‘good habit’ is actually the trap door.", 24, 26),
-        _beat("Final punch: break it once and the whole vibe resets.", 24, 26),
-        _beat("Stop there. No recap. Keep scrolling.", 8, 12),
+        "[Beat 1]\nStop, you’re not lazy, your phone is just way too convincing.",
+        "[Beat 2]\nYou open one app, suddenly it’s three hours later and dinner’s cold.",
+        "[Beat 3]\nThe wild part is the tiny swipe you do before bed controls your whole morning.",
+        "[Beat 4]\nTwist is, you don’t even like what you watched, you just kept moving.",
+        "[Beat 5]\nThat one swipe turns into a loop and your brain calls it “relaxing.”",
+        "[Beat 6]\nThen you wake up tired, blame yourself, and repeat the exact same scroll spiral.",
+        "[Beat 7]\nHere’s the punchline: the app isn’t addictive, your autopilot is.",
+        "[Beat 8]\nAnyway, I’m deleting it tonight, no speeches, just vibes.",
     ]
-    beats = _unique_lines([beat for beat in beats if beat])
+    beats = _unique_lines(beats)
     script = "\n".join(beats)
     word_count = _count_words(script)
-    if platform == "tiktok" and (word_count < 150 or word_count > 165 or len(beats) != 8):
+    if platform == "tiktok" and (word_count < 90 or word_count > 110 or len(beats) != 8):
         raise RuntimeError("script_beats_invalid")
     return script
