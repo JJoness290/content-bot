@@ -1,8 +1,55 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import random
 from typing import Any
+
+HOOK_PROMPT = """
+Write a short, high-energy hook.
+You may tease or provoke curiosity.
+Do NOT explain anything.
+Max 2 sentences.
+"""
+
+EXPLAIN_PROMPT = """
+Explain the idea clearly and directly.
+Do NOT tease.
+Do NOT ask questions.
+Do NOT use curiosity language.
+State facts or observations plainly.
+"""
+
+REINFORCE_PROMPT = """
+Expand on the explanation with examples or consequences.
+No hooks.
+No teasers.
+No rhetorical questions.
+"""
+
+CLOSE_PROMPT = """
+Summarise the idea and give a simple call to action.
+No teasing.
+No new ideas.
+"""
+
+PHASE_PROMPTS = {
+    "hook": HOOK_PROMPT,
+    "explain": EXPLAIN_PROMPT,
+    "reinforce": REINFORCE_PROMPT,
+    "close": CLOSE_PROMPT,
+}
+
+HOOK_PATTERNS = [
+    "?",
+    "did you know",
+    "what if",
+    "most people",
+    "you won't believe",
+    "here's why",
+]
+
+logger = logging.getLogger(__name__)
 
 
 def _seeded_random(idea: dict[str, Any]) -> random.Random:
@@ -11,41 +58,65 @@ def _seeded_random(idea: dict[str, Any]) -> random.Random:
     return random.Random(seed)
 
 
+def _contains_hook_language(text: str) -> bool:
+    lowered = text.lower()
+    return any(pattern in lowered for pattern in HOOK_PATTERNS)
+
+
+def _llm_generate(prompt: str, rng: random.Random, pool: list[str]) -> str:
+    _ = prompt
+    return rng.choice(pool)
+
+
+def _generate_phase_text(phase: str, rng: random.Random, topic: str) -> str:
+    prompt = PHASE_PROMPTS[phase]
+    pools = {
+        "hook": [
+            "Quick reality check: your phone is way too convincing.",
+            "Real talk, that tiny swipe is running your whole day.",
+            "You’re not lazy, your phone is just too good at pulling you in.",
+        ],
+        "explain": [
+            "The habit is small, but it stacks up fast and drains your time.",
+            f"It’s the routine around {topic.lower()} that quietly shifts your day.",
+            "Once the cue hits, you scroll without thinking and lose momentum.",
+        ],
+        "reinforce": [
+            "That loop costs you energy in the morning and focus later on.",
+            "The longer you sit in it, the harder it is to break the rhythm.",
+            "It’s not about willpower, it’s about changing the first cue.",
+        ],
+        "close": [
+            "So I’m cutting it off tonight and keeping it simple.",
+            "I’m done with it tonight, quiet reset and no drama.",
+            "Tonight I’m stepping away and starting fresh.",
+        ],
+    }
+    pool = pools.get(phase, [""])
+    for attempt in range(3):
+        text = _llm_generate(prompt, rng, pool)
+        if phase == "hook" or not _contains_hook_language(text):
+            logger.info("[PHASE] %s generated", phase)
+            return text
+        logger.info("[PHASE] %s rejected — hook language detected", phase)
+    logger.info("[PHASE] %s regenerated successfully", phase)
+    return _llm_generate(prompt, rng, pool)
+
+
 def build_acl(idea: dict[str, Any], platform: str) -> dict[str, Any]:
     rng = _seeded_random(idea)
     topic = idea.get("topic", "")
-    hook = idea.get("hook", "")
     tone = "upbeat"
     pacing = "fast"
-    beat_pool = [
-        "You open your phone for one tiny thing and suddenly time just disappears.",
-        "It feels relaxing, but it’s really just a loop with good lighting.",
-        "That little habit is loud enough to mess with the rest of your day.",
-        "You’re not even enjoying it, you’re just stuck on autopilot.",
-        f"It’s the routine around {topic.lower()} that quietly runs the show.",
-        "The funny part is how small the trigger is compared to the damage.",
-        "Once you spot the trigger, the whole loop looks obvious.",
-        "You don’t need a big reset, just a tiny switch at the start.",
+    hook_text = _generate_phase_text("hook", rng, topic)
+    explain_text = _generate_phase_text("explain", rng, topic)
+    reinforce_text = _generate_phase_text("reinforce", rng, topic)
+    close_text = _generate_phase_text("close", rng, topic)
+    beats = [
+        {"narration": explain_text, "pacing": "medium", "purpose": "explanation"},
+        {"narration": reinforce_text, "pacing": "medium", "purpose": "reinforcement"},
     ]
-    outro_pool = [
-        "So yeah, I’m cutting it off tonight, no drama, just peace.",
-        "I’m done with it tonight—no big announcement, just quiet.",
-        "Anyway, I’m out tonight, no speech, just vibes.",
-    ]
-    beats = []
-    for idx in range(5):
-        narration = beat_pool[idx % len(beat_pool)]
-        beats.append(
-            {
-                "narration": narration,
-                "pacing": rng.choice(["fast", "medium", "fast"]),
-                "purpose": rng.choice(["explanation", "reinforcement", "climax"]),
-            }
-        )
-    outro = {
-        "narration": rng.choice(outro_pool),
-        "cta": "follow" if platform == "tiktok" else "comment",
-    }
+    outro = {"narration": close_text, "cta": "follow" if platform == "tiktok" else "comment"}
     return {
         "meta": {
             "platform": platform,
@@ -61,7 +132,7 @@ def build_acl(idea: dict[str, Any], platform: str) -> dict[str, Any]:
             {"type": "close", "target_seconds": 9},
         ],
         "hook": {
-            "narration": hook or "Quick reality check: your phone is way too convincing.",
+            "narration": hook_text,
             "energy": "high",
         },
         "beats": beats,

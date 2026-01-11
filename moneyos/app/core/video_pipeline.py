@@ -486,6 +486,7 @@ def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
     duration = 0.0
     for attempt in range(2):
         generate_voiceover(voice_text, audio_path)
+        logger.info("[VOICE] TTS audio created")
         try:
             duration = AudioSegment.from_file(audio_path).duration_seconds
         except Exception:
@@ -501,10 +502,12 @@ def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
     update_progress(script.platform, "visual_selection", 45, 75)
     try:
         srt_path, duration = generate_captions(voice_text, audio_path, srt_path)
+        logger.info("[SUBS] subtitles generated from audio")
         if script.platform == "tiktok" and duration < rules.TIKTOK_MIN_SECONDS:
             voice_text = rules.extend_for_duration(voice_text, rules.TIKTOK_MIN_SECONDS)
             generate_voiceover(voice_text, audio_path)
             srt_path, duration = generate_captions(voice_text, audio_path, srt_path)
+            logger.info("[SUBS] subtitles generated from audio")
     except Exception as exc:
         logger.warning("Caption generation failed, rendering without subtitles: %s", exc)
         srt_path = None

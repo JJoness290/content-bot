@@ -12,15 +12,6 @@ PACE_WPS = {
     "slow": 2.0,
 }
 
-HOOK_PATTERNS = [
-    "?",
-    "did you know",
-    "what if",
-    "most people",
-    "you won't believe",
-    "here's why",
-]
-
 logger = logging.getLogger(__name__)
 
 
@@ -52,33 +43,6 @@ def extend_outro_text(text: str, target_seconds: float, pacing: str, rng: random
     return extended
 
 
-def _contains_hook_language(text: str) -> bool:
-    lowered = text.lower()
-    return any(pattern in lowered for pattern in HOOK_PATTERNS)
-
-
-def _regenerate_phase_text(phase_type: str, rng: random.Random) -> str:
-    pools = {
-        "explain": [
-            "It’s the tiny habit that adds up faster than you think.",
-            "Once you see the trigger, the rest of the loop makes sense.",
-            "The pattern is simple: cue, scroll, repeat, and it drains your energy.",
-        ],
-        "reinforce": [
-            "The fix is small and repeatable, not a big reset.",
-            "Swap the first minute and the rest of the day follows.",
-            "Keep it simple: change the cue, change the outcome.",
-        ],
-        "close": [
-            "So I’m cutting it off tonight, no drama, just peace.",
-            "I’m done with it tonight—quiet reset, no big speech.",
-            "That’s it for me tonight, just a calm reset.",
-        ],
-    }
-    options = pools.get(phase_type, [""])
-    return rng.choice(options)
-
-
 def plan_timeline(acl: dict[str, Any]) -> list[dict[str, Any]]:
     rng = _seeded_random(acl)
     target_duration = acl.get("meta", {}).get("target_duration", 60)
@@ -104,11 +68,6 @@ def plan_timeline(acl: dict[str, Any]) -> list[dict[str, Any]]:
         target_seconds = phase.get("target_seconds", 0)
         text, pacing = phase_map.get(phase_type, ("", "medium"))
         duration = estimate_duration(text, pacing)
-        if phase_type != "hook" and _contains_hook_language(text):
-            logger.info("[PHASE] %s rejected — hook language detected", phase_type)
-            text = _regenerate_phase_text(phase_type, rng)
-            duration = estimate_duration(text, pacing)
-            logger.info("[PHASE] %s regenerated successfully", phase_type)
         locked = phase_type in {"hook", "explain"}
         if phase_type in {"reinforce", "close"} and duration < target_seconds:
             target_total = duration + (target_seconds - duration)
