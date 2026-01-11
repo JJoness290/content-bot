@@ -138,23 +138,30 @@ def decide_next_content(platform: str) -> dict[str, Any]:
     }
 
 
+def _unique_lines(lines: list[str]) -> list[str]:
+    seen = set()
+    result = []
+    for line in lines:
+        key = line.lower().strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        result.append(line)
+    return result
+
+
 def build_script(idea: dict[str, Any], platform: str) -> str:
     hook = idea["hook"]
     topic = idea["topic"]
-    lines = [
+    beats = [
         hook,
-        f"Okay, quick story. {topic}.",
-        "You know that tiny habit we all do?",
-        "It feels normal. It’s not.",
-        "Here’s the weird part.",
-        "You do it once. Then it spirals.",
-        "You catch yourself doing it again.",
-        "Now it’s a routine. Congrats, I guess.",
-        "If you relate, you’re not alone.",
-        "Drop a comment if you’ve done this too.",
-        idea.get("cta", "").strip(),
+        f"New rule: {topic}.",
+        "Escalation: it turns into a daily trap fast.",
+        "Twist: the thing you blame isn’t the real cause.",
+        "Payoff: you notice it everywhere, then you stop.",
     ]
-    script = " ".join(line for line in lines if line)
+    beats = _unique_lines([beat for beat in beats if beat])
+    script = "\n".join(beats)
     script = _word_limit(
         script,
         150 if platform == "tiktok" else 130,
