@@ -174,6 +174,15 @@ class VideoManagerBot:
         ]
         return [pool[i % len(pool)] for i in range(count)]
 
+    def extend_script(self, script_text: str) -> str:
+        additions = [
+            "Okay, quick example.",
+            "Picture this. You do it again.",
+            "Then it gets worse. You know it.",
+            "Wait for it. Here comes the twist.",
+        ]
+        return f"{script_text}\n" + "\n".join(additions)
+
     def _fallback_visuals(self, visuals_dir: Path, count: int) -> list[Path]:
         visuals: list[Path] = []
         for idx in range(count):

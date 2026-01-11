@@ -378,11 +378,12 @@ def render_video(
         last_error = stderr
         signature = bot.intercept_error(RuntimeError(stderr), context={"phase": "primary", "stderr": last_error})
         bot.apply_fix(signature, last_error, context={"phase": "primary", "ffmpeg_cmd": ffmpeg_cmd})
-        if "invalid argument" in last_error.lower() or "filter" in last_error.lower():
+        repair_plan = bot.plan_repair(last_error)
+        if repair_plan["action"] in {"rebuild_graph", "regenerate_visuals", "retry_with_new_visuals"}:
             visuals = _ensure_visuals(plan.total_duration)
-        if "srt" in last_error.lower() or "subtitles" in last_error.lower():
+        if repair_plan["action"] == "disable_subtitles":
             include_subtitles = False
-        if "output format for '1'" in last_error.lower():
+        if repair_plan["action"] == "new_output_path":
             output_path = (output_dir / f"video_{script_id}_repair.mp4").resolve()
             output_path.parent.mkdir(parents=True, exist_ok=True)
             bot.retry_operation(lambda: output_path.touch(exist_ok=True), context={"op": "touch_video"})
@@ -478,6 +479,7 @@ def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
             duration = 0.0
         if script.platform != "tiktok" or duration >= 60:
             break
+        voice_text = manager.extend_script(voice_text)
         voice_text = rules.extend_for_duration(voice_text, 62.0)
     update_progress(script.platform, "visual_selection", 45, 75)
     try:

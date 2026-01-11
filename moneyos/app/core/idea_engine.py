@@ -9,52 +9,52 @@ from app.core.db import get_connection
 
 PLATFORM_TOPICS: dict[str, list[tuple[str, int, str]]] = {
     "tiktok": [
-        ("The £5 habit that saves £150/month", 3, "quick win"),
-        ("Top 3 AI tools to earn extra income fast", 2, "tool stack"),
-        ("Side hustles you can start in 30 minutes", 3, "step-by-step"),
-        ("The 50/30/20 budget that actually sticks", 2, "framework"),
-        ("Best UK cashback apps in 2025", 2, "buyer guide"),
-        ("Life hacks to cut grocery bills in half", 2, "life hack"),
-        ("Debt snowball vs avalanche in 60 seconds", 1, "comparison"),
-        ("How to negotiate bills and keep the discount", 2, "scripted pitch"),
-        ("Avoid these 3 money leaks every payday", 3, "myth-busting"),
-        ("Beginner investing mistakes to avoid", 1, "avoidance"),
+        ("Everyone fakes productivity before 10am", 3, "hot take"),
+        ("Why your group chat is a full-time job", 2, "relatable chaos"),
+        ("The phone battery ritual we all do", 2, "relatable confession"),
+        ("If you do this at 2am, you’re not okay", 2, "bold statement"),
+        ("The main character habits that are actually cringe", 2, "opinion"),
+        ("This is why your to-do list hates you", 2, "rant"),
+        ("The secret war between you and your alarm", 3, "relatable"),
+        ("Your ‘little treat’ era is out of control", 2, "chaos"),
+        ("Nobody talks about the gym mirror economy", 1, "funny observation"),
+        ("The fake ‘soft life’ checklist we all lie about", 2, "relatable"),
     ],
     "youtube": [
-        ("The fastest way to build an emergency fund", 3, "step-by-step"),
-        ("AI tools that save you hours each week", 2, "tool stack"),
-        ("The no-stress budget for busy people", 2, "framework"),
-        ("How to cut subscriptions without losing value", 2, "life hack"),
-        ("Cashback cards that pay for your groceries", 2, "buyer guide"),
-        ("Trending money myths to stop believing", 2, "myth-busting"),
-        ("The simple side-hustle stack for beginners", 2, "stacked plan"),
-        ("Life hacks that reduce monthly bills today", 2, "life hack"),
-        ("How to automate saving without thinking", 3, "automation"),
-        ("The buyer guide to better money apps", 1, "buyer guide"),
+        ("Why everyone pretends to love waking up early", 2, "hot take"),
+        ("The daily routines that quietly waste your time", 2, "relatable"),
+        ("The unspoken rules of group chats", 2, "funny observation"),
+        ("Why your brain hates your to-do list", 1, "rant"),
+        ("The tiny habits that feel illegal but work", 2, "curiosity"),
+        ("What ‘being productive’ actually looks like", 1, "story"),
+        ("The weird habits we all pretend are normal", 2, "relatable"),
+        ("Why your phone runs your life now", 2, "bold statement"),
+        ("Small chaos that makes mornings impossible", 2, "relatable"),
+        ("The little lies in your daily routine", 1, "confession"),
     ],
 }
 HOOK_POOL = [
-    "This one change saved me £300 last month.",
-    "Stop doing this if you want to keep more cash.",
-    "Here’s the money mistake most people make.",
-    "Do this before your next payday.",
-    "A 60-second fix to boost your savings.",
+    "You’re doing this every day and it’s wild.",
+    "Nobody tells you this part out loud.",
+    "This is why you feel behind all the time.",
+    "Real talk: this is embarrassing for all of us.",
+    "If you do this, you’re in the club.",
 ]
 STYLE_POOL = [
-    "fast checklist",
-    "myth-busting",
-    "step-by-step",
-    "buyer guide",
+    "rant",
+    "relatable confession",
+    "hot take",
+    "funny observation",
 ]
-HASHTAGS = "#money #personalfinance #sidehustle #budgeting #ai"
+HASHTAGS = "#tiktok #relatable #dailychaos #fyp #storytime"
 CTA_POOL = {
     "tiktok": [
-        "Follow for more no-fluff money wins.",
-        "Save this and try one step today.",
+        "Follow for more chaos like this.",
+        "Comment if this is literally you.",
     ],
     "youtube": [
-        "Subscribe for more no-fluff money wins.",
-        "Like and subscribe for weekly money plays.",
+        "Subscribe for more chaos like this.",
+        "Drop a comment if you relate.",
     ],
 }
 
@@ -127,7 +127,7 @@ def decide_next_content(platform: str) -> dict[str, Any]:
     topic, _, angle = random.choices(topics, weights=weights, k=1)[0]
     hook = _rotate(HOOK_POOL, seed + random.randint(1, 7))[0]
     style = _rotate(STYLE_POOL, seed + random.randint(3, 9))[0]
-    cta = random.choice(CTA_POOL.get(platform, ["Follow for more money wins."]))
+    cta = random.choice(CTA_POOL.get(platform, ["Follow for more chaos."]))
 
     return {
         "topic": topic,
@@ -139,18 +139,25 @@ def decide_next_content(platform: str) -> dict[str, Any]:
 
 
 def build_script(idea: dict[str, Any], platform: str) -> str:
-    intro = f"{idea['hook']} Today’s topic: {idea['topic']}."
-    body = (
-        f"Angle: {idea.get('angle', 'quick win')}. Here’s the quick plan: "
-        "1) pick one money win, "
-        "2) automate it, "
-        "3) review weekly, "
-        "4) repeat for 30 days. "
-        "Keep your biggest expense visible so you feel the progress."
-    )
+    hook = idea["hook"]
+    topic = idea["topic"]
+    lines = [
+        hook,
+        f"Okay, quick story. {topic}.",
+        "You know that tiny habit we all do?",
+        "It feels normal. It’s not.",
+        "Here’s the weird part.",
+        "You do it once. Then it spirals.",
+        "You catch yourself doing it again.",
+        "Now it’s a routine. Congrats, I guess.",
+        "If you relate, you’re not alone.",
+        "Drop a comment if you’ve done this too.",
+        idea.get("cta", "").strip(),
+    ]
+    script = " ".join(line for line in lines if line)
     script = _word_limit(
-        f"{intro} {body} {idea.get('cta', '')}",
-        80 if platform == "tiktok" else 120,
-        120 if platform == "tiktok" else 180,
+        script,
+        150 if platform == "tiktok" else 130,
+        165 if platform == "tiktok" else 180,
     )
     return script

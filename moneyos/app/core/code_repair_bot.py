@@ -92,6 +92,18 @@ class CodeRepairBot:
             return "tier2"
         return "tier1"
 
+    def plan_repair(self, stderr: str) -> dict[str, Any]:
+        stderr_lower = stderr.lower()
+        if "subtitles" in stderr_lower or ".srt" in stderr_lower:
+            return {"action": "disable_subtitles"}
+        if "invalid argument" in stderr_lower or "filter" in stderr_lower:
+            return {"action": "rebuild_graph"}
+        if "output format for '1'" in stderr_lower:
+            return {"action": "new_output_path"}
+        if "no such file" in stderr_lower:
+            return {"action": "regenerate_visuals"}
+        return {"action": "retry_with_new_visuals"}
+
     def apply_fix(self, signature: str, stderr: str = "", context: dict[str, Any] | None = None) -> bool:
         if signature in self._memory.applied_repairs:
             return False
