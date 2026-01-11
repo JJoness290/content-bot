@@ -270,10 +270,10 @@ def render_video(
     logger.info("FFmpeg output path: %s", output_path)
     size = "1080x1920"
 
-    def _zoompan_filter(frames: int) -> str:
+    def _zoompan_filter(frames: int, zoom_step: float) -> str:
         return (
             "scale=1080:1920,"
-            f"zoompan=z='min(zoom+0.001,1.05)':d={frames}:"
+            f"zoompan=z='min(zoom+{zoom_step},1.08)':d={frames}:"
             "x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
         )
 
@@ -282,7 +282,10 @@ def render_video(
         video_labels = []
         for idx in range(clip_count):
             label = f"v{idx}"
-            filter_parts.append(f"[{idx}:v]{_zoompan_filter(frames)}[{label}]")
+            zoom_step = 0.002 if idx % 2 == 0 else 0.003
+            if idx % 4 == 0:
+                zoom_step = 0.004
+            filter_parts.append(f"[{idx}:v]{_zoompan_filter(frames, zoom_step)}[{label}]")
             video_labels.append(f"[{label}]")
         concat_inputs = "".join(video_labels)
         filter_parts.append(f"{concat_inputs}concat=n={clip_count}:v=1:a=0[v0]")
@@ -298,7 +301,7 @@ def render_video(
     ) -> list[str]:
         cmd: list[str] = ["ffmpeg", "-y"]
         plan_visuals = len(visuals)
-        segment_duration = plan_duration / plan_visuals
+        segment_duration = max(1.0, min(3.0, plan_duration / plan_visuals))
         for visual in visuals:
             cmd += [
                 "-loop",
@@ -452,7 +455,7 @@ def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
     voice_text = _script_to_voice_text(payload)
     voice_text = manager.refine_script(voice_text)
     if script.platform == "tiktok":
-        voice_text = rules.ensure_word_count(voice_text, 140, 160)
+        voice_text = rules.ensure_word_count(voice_text, 150, 165)
     timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
     platform_dir = TIKTOK_DIR if script.platform == "tiktok" else YOUTUBE_DIR
     audio_path = platform_dir / f"voice_{script.id}_{timestamp}.mp3"

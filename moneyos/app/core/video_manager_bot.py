@@ -139,7 +139,40 @@ class VideoManagerBot:
         script_text = script_text.replace("it is", "it's")
         script_text = script_text.replace("Here is", "Here's").replace("There is", "There's")
         script_text = script_text.replace(". ", ".\n")
-        return script_text
+        return self._ensure_upbeat(script_text)
+
+    def _ensure_upbeat(self, script_text: str) -> str:
+        lines = [line.strip() for line in script_text.splitlines() if line.strip()]
+        if not lines:
+            lines = ["Most people are broke because of THIS habit."]
+        if len(lines[0].split()) > 12:
+            lines[0] = "Most people are broke because of THIS habit."
+        enforced = [self._shorten_sentence(line) for line in lines]
+        if len(enforced) < 24:
+            enforced.extend(self._upbeat_fillers(24 - len(enforced)))
+        return "\n".join(enforced)
+
+    def _shorten_sentence(self, line: str) -> str:
+        line = line.replace("that is", "that's").replace("you will", "you'll")
+        words = line.split()
+        if len(words) <= 12:
+            return line
+        return " ".join(words[:12])
+
+    def _upbeat_fillers(self, count: int) -> list[str]:
+        pool = [
+            "Nobody talks about this but it works.",
+            "If you're doing this, stop today.",
+            "Wait for it, this part is wild.",
+            "Here's the trick most people miss.",
+            "Try this tonight, seriously.",
+            "This is why you're stuck right now.",
+            "One tiny switch changes everything.",
+            "Bet you didn't know this rule.",
+            "Do this before you check your bank app.",
+            "Save this, you'll need it later.",
+        ]
+        return [pool[i % len(pool)] for i in range(count)]
 
     def _fallback_visuals(self, visuals_dir: Path, count: int) -> list[Path]:
         visuals: list[Path] = []
