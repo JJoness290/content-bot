@@ -270,6 +270,24 @@ def render_video(
     logger.info("FFmpeg output path: %s", output_path)
     size = "1080x1920"
 
+    def _zoompan_filter(frames: int) -> str:
+        return (
+            "scale=1080:1920,"
+            f"zoompan=z='min(zoom+0.001,1.05)':d={frames}:"
+            "x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+        )
+
+    def _build_concat_filters(clip_count: int, frames: int) -> tuple[list[str], str]:
+        filter_parts = []
+        video_labels = []
+        for idx in range(clip_count):
+            label = f"v{idx}"
+            filter_parts.append(f"[{idx}:v]{_zoompan_filter(frames)}[{label}]")
+            video_labels.append(f"[{label}]")
+        concat_inputs = "".join(video_labels)
+        filter_parts.append(f"{concat_inputs}concat=n={clip_count}:v=1:a=0[v0]")
+        return filter_parts, "[v0]"
+
     def _build_ffmpeg_cmd(
         *,
         output_file: Path,
@@ -293,21 +311,11 @@ def render_video(
         if include_audio:
             cmd += ["-i", audio_path.as_posix()]
 
-        filter_parts = []
-        video_labels = []
-        for idx in range(plan_visuals):
-            label = f"v{idx}"
-            filter_parts.append(
-                f"[{idx}:v]scale=1080:1920,zoompan=z=min(zoom+0.001,1.05):d=90:s=1080x1920[{label}]"
-            )
-            video_labels.append(f"[{label}]")
-        concat_inputs = "".join(video_labels)
-        filter_parts.append(f"{concat_inputs}concat=n={plan_visuals}:v=1:a=0[v0]")
+        frames = max(1, int(25 * segment_duration))
+        filter_parts, video_map = _build_concat_filters(plan_visuals, frames)
         if include_subtitles and srt_path:
             filter_parts.append(f"[v0]subtitles={srt_path}[vout]")
             video_map = "[vout]"
-        else:
-            video_map = "[v0]"
         filter_complex = ";".join(filter_parts)
         cmd += ["-filter_complex", filter_complex, "-map", video_map]
         if include_audio:
@@ -324,6 +332,15 @@ def render_video(
         if result.returncode != 0:
             return False, result.stderr or result.stdout
         return True, ""
+
+    def _ensure_visuals(plan_duration: float) -> list[Path]:
+        visuals = manager.generate_visuals(platform, script_text, plan_duration)
+        visuals = [visual for visual in visuals if visual.exists() and visual.stat().st_size > 0]
+        if len(visuals) < plan.visuals and visuals:
+            needed = plan.visuals - len(visuals)
+            visuals.extend(visuals[:needed])
+        manager.validate_platform_rules(platform, plan_duration, len(visuals))
+        return visuals
     if not audio_path.exists() or audio_path.stat().st_size == 0:
         logger.warning("Audio missing in render_video, generating silent fallback.")
         silent = AudioSegment.silent(duration=1000)
@@ -340,8 +357,10 @@ def render_video(
     if platform == "tiktok" and duration < rules.TIKTOK_MIN_SECONDS:
         duration = rules.TIKTOK_TARGET_SECONDS
     plan = rules.enforce_plan(platform, duration)
+    if platform == "tiktok" and plan.total_duration < rules.TIKTOK_MIN_SECONDS:
+        plan = rules.enforce_plan(platform, rules.TIKTOK_MIN_SECONDS)
     rules.validate_plan(platform, duration, plan)
-    visuals = manager.generate_visuals(platform, script_text, plan.total_duration)
+    visuals = _ensure_visuals(plan.total_duration)
     include_subtitles = subtitles_available and not memory.disabled_subtitles
     ffmpeg_cmd = _build_ffmpeg_cmd(
         output_file=output_path,
@@ -356,6 +375,8 @@ def render_video(
         last_error = stderr
         signature = bot.intercept_error(RuntimeError(stderr), context={"phase": "primary", "stderr": last_error})
         bot.apply_fix(signature, last_error, context={"phase": "primary", "ffmpeg_cmd": ffmpeg_cmd})
+        if "invalid argument" in last_error.lower() or "filter" in last_error.lower():
+            visuals = _ensure_visuals(plan.total_duration)
         if "srt" in last_error.lower() or "subtitles" in last_error.lower():
             include_subtitles = False
         if "output format for '1'" in last_error.lower():

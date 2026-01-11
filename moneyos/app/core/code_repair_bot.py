@@ -130,6 +130,7 @@ class CodeRepairBot:
                 applied = True
 
         if applied:
+            logger.info("RepairBot applied fix: %s", fix or stderr_lower)
             self._memory.applied_repairs.add(signature)
             self._save_memory()
             self.verify_repair(context)
