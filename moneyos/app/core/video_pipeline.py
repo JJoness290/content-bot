@@ -1,14 +1,11 @@
 from __future__ import annotations
 
 import asyncio
-import compileall
-import hashlib
 import os
 import random
 import re
 import shutil
 import textwrap
-import traceback
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -19,6 +16,7 @@ import logging
 import requests
 from pydub import AudioSegment
 
+from app.core.code_repair_bot import get_code_repair_bot
 from app.core.video_queue import insert_output, update_script_payload
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -32,49 +30,6 @@ YOUTUBE_DIR = OUTPUT_DIR / "youtube"
 
 FONT = "Arial"
 logger = logging.getLogger(__name__)
-REPAIR_STATE = {
-    "disabled_subtitles": False,
-    "disabled_backgrounds": False,
-    "fallback_mode": False,
-    "applied_repairs": set(),
-}
-
-
-def _hash_error_signature(message: str) -> str:
-    return hashlib.sha256(message.encode("utf-8", errors="ignore")).hexdigest()
-
-
-def _apply_repair(signature: str, stderr: str, background_path: Path | None) -> None:
-    if signature in REPAIR_STATE["applied_repairs"]:
-        return
-
-    stderr_lower = stderr.lower()
-    applied = False
-    if "subtitles" in stderr_lower or ".srt" in stderr_lower or "caption" in stderr_lower:
-        if not REPAIR_STATE["disabled_subtitles"]:
-            REPAIR_STATE["disabled_subtitles"] = True
-            applied = True
-
-    if background_path and background_path.as_posix().lower() in stderr_lower:
-        if not REPAIR_STATE["disabled_backgrounds"]:
-            REPAIR_STATE["disabled_backgrounds"] = True
-            applied = True
-
-    if "no such file" in stderr_lower or "could not open" in stderr_lower:
-        if not REPAIR_STATE["disabled_subtitles"]:
-            REPAIR_STATE["disabled_subtitles"] = True
-            applied = True
-
-    if applied:
-        REPAIR_STATE["applied_repairs"].add(signature)
-
-
-def _verify_repair_state(ffmpeg_cmd: ffmpeg.nodes.OutputStream | None = None) -> None:
-    logger.info("Repair verification: compiling Python sources")
-    compileall.compile_dir(str(ROOT), quiet=1)
-    if ffmpeg_cmd is not None:
-        ffmpeg_cmd.compile()
-    logger.info("Repair verification: ffmpeg dry-run compiled")
 
 
 @dataclass
@@ -156,16 +111,29 @@ def _pyttsx3_save(text: str, output_path: Path) -> None:
 
 
 def generate_voiceover(text: str, output_path: Path) -> Path:
+    bot = get_code_repair_bot()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        asyncio.run(_edge_tts_save(text, output_path))
+        bot.retry_operation(lambda: asyncio.run(_edge_tts_save(text, output_path)), context={"op": "edge_tts"})
         return output_path
     except Exception:
-        wav_path = output_path.with_suffix(".wav")
-        _pyttsx3_save(text, wav_path)
-        audio = AudioSegment.from_wav(wav_path)
-        audio.export(output_path, format="mp3")
-        return output_path
+        try:
+            wav_path = output_path.with_suffix(".wav")
+            bot.retry_operation(lambda: _pyttsx3_save(text, wav_path), context={"op": "pyttsx3_save"})
+            audio = AudioSegment.from_wav(wav_path)
+            bot.retry_operation(
+                lambda: audio.export(output_path, format="mp3"),
+                context={"op": "audio_export"},
+            )
+            return output_path
+        except Exception:
+            logger.warning("Voiceover generation failed, using silent fallback.")
+            silent = AudioSegment.silent(duration=1000)
+            bot.retry_operation(
+                lambda: silent.export(output_path, format="mp3"),
+                context={"op": "silent_audio_export"},
+            )
+            return output_path
 
 
 def _sentence_chunks(text: str) -> list[str]:
@@ -183,6 +151,7 @@ def _format_srt_timestamp(seconds: float) -> str:
 
 
 def generate_captions(text: str, audio_path: Path, output_path: Path) -> tuple[Path, float]:
+    bot = get_code_repair_bot()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     audio = AudioSegment.from_file(audio_path)
     duration = audio.duration_seconds
@@ -199,7 +168,10 @@ def generate_captions(text: str, audio_path: Path, output_path: Path) -> tuple[P
         current = end
         wrapped = "\n".join(textwrap.wrap(sentence, width=42))
         lines.append(f"{idx}\n{_format_srt_timestamp(start)} --> {_format_srt_timestamp(end)}\n{wrapped}\n")
-    output_path.write_text("\n".join(lines), encoding="utf-8")
+    bot.retry_operation(
+        lambda: output_path.write_text("\n".join(lines), encoding="utf-8"),
+        context={"op": "write_srt", "path": str(output_path)},
+    )
     return output_path, duration
 
 
@@ -218,6 +190,7 @@ def _pick_local_background() -> tuple[Path | None, bool]:
 
 
 def _pexels_background(query: str) -> tuple[Path | None, bool]:
+    bot = get_code_repair_bot()
     api_key = os.environ.get("PEXELS_API_KEY")
     if not api_key:
         return None, False
@@ -244,7 +217,10 @@ def _pexels_background(query: str) -> tuple[Path | None, bool]:
     if not filename.exists():
         stream = requests.get(link, timeout=30)
         stream.raise_for_status()
-        filename.write_bytes(stream.content)
+        bot.retry_operation(
+            lambda: filename.write_bytes(stream.content),
+            context={"op": "write_pexels", "path": str(filename)},
+        )
     return filename, True
 
 
@@ -267,6 +243,7 @@ def render_video(
     platform: str,
     script_id: int,
 ) -> Path:
+    bot = get_code_repair_bot()
     ensure_dirs()
     audio_path = audio_path.resolve()
     srt_path = srt_path.resolve().as_posix() if srt_path else None
@@ -279,41 +256,34 @@ def render_video(
     assert output_path.endswith(".mp4")
     logger.info("FFmpeg output path: %s", output_path)
     size = "1080x1920"
-    def build_video_stream(use_background: bool) -> Any:
+
+    def build_video_stream(use_background: bool, use_filters: bool) -> Any:
         if use_background and background_path:
             if not background_path.exists():
                 logger.warning("Background asset missing, using fallback: %s", background_path)
-                return build_video_stream(False)
+                return build_video_stream(False, use_filters)
             if background_is_video:
                 video_in = ffmpeg.input(background_path.as_posix(), stream_loop=-1)
-                return video_in.filter("scale", 1080, 1920).filter("fps", fps=30)
-            video_in = ffmpeg.input(background_path.as_posix(), loop=1, framerate=30, t=duration)
-            return (
-                video_in.filter(
-                    "zoompan",
-                    z="min(zoom+0.0008,1.05)",
-                    d=int(duration * 30),
-                    s=size,
+                base = video_in.filter("scale", 1080, 1920).filter("fps", fps=30)
+            else:
+                video_in = ffmpeg.input(background_path.as_posix(), loop=1, framerate=30, t=duration)
+                base = (
+                    video_in.filter(
+                        "zoompan",
+                        z="min(zoom+0.0008,1.05)",
+                        d=int(duration * 30),
+                        s=size,
+                    )
+                    .filter("scale", 1080, 1920)
+                    .filter("fps", fps=30)
                 )
-                .filter("scale", 1080, 1920)
-                .filter("fps", fps=30)
-            )
-        video_in = ffmpeg.input(f"color=c=black:s={size}:d={duration}", f="lavfi")
-        return video_in.filter("fps", fps=30)
-
-    audio = ffmpeg.input(audio_path.as_posix())
-    subtitles_available = bool(srt_path) and Path(srt_path).exists()
-    if not subtitles_available:
-        logger.warning("Captions missing, rendering without subtitles")
-
-    last_error = ""
-    last_signature = ""
-    for attempt in (1, 2):
-        use_subtitles = subtitles_available and attempt == 1 and not REPAIR_STATE["disabled_subtitles"]
-        use_background = not REPAIR_STATE["disabled_backgrounds"] and (attempt == 1 or subtitles_available)
-        video = build_video_stream(use_background)
+        else:
+            video_in = ffmpeg.input(f"color=c=black:s={size}:d={duration}", f="lavfi")
+            base = video_in.filter("fps", fps=30)
+        if not use_filters:
+            return base
         hook_text = _clean_text(hook)
-        hook_draw = video.filter(
+        return base.filter(
             "drawtext",
             font=FONT,
             text=hook_text,
@@ -326,23 +296,59 @@ def render_video(
             y="(h-text_h)/2",
             enable="between(t,0,3)",
         )
-        if use_subtitles:
-            logger.info("FFmpeg render attempt %s with subtitles", attempt)
-            render_stream = ffmpeg.filter(
-                hook_draw,
-                "subtitles",
-                srt_path,
-                force_style=(
-                    "FontName=Arial,FontSize=38,PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,"
-                    "Outline=2,Alignment=2,MarginV=120"
-                ),
-            )
-        else:
-            logger.info("FFmpeg render attempt %s without subtitles", attempt)
-            render_stream = hook_draw
 
-        ffmpeg_cmd = ffmpeg.output(
+    audio = ffmpeg.input(audio_path.as_posix())
+    subtitles_available = bool(srt_path) and Path(srt_path).exists()
+    if not subtitles_available:
+        logger.warning("Captions missing, rendering without subtitles")
+
+    last_error = ""
+    memory = bot.memory
+    render_stream = build_video_stream(
+        use_background=not memory.disabled_backgrounds,
+        use_filters=not memory.disabled_filters,
+    )
+    if subtitles_available and not memory.disabled_subtitles and not memory.disabled_filters:
+        logger.info("FFmpeg render attempt 1 with subtitles")
+        render_stream = ffmpeg.filter(
             render_stream,
+            "subtitles",
+            srt_path,
+            force_style=(
+                "FontName=Arial,FontSize=38,PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,"
+                "Outline=2,Alignment=2,MarginV=120"
+            ),
+        )
+    else:
+        logger.info("FFmpeg render attempt 1 without subtitles")
+
+    ffmpeg_cmd = ffmpeg.output(
+        render_stream,
+        audio,
+        output_path,
+        vcodec="libx264",
+        acodec="aac",
+        pix_fmt="yuv420p",
+        r=25,
+        shortest=1,
+        movflags="+faststart",
+    )
+    logger.info("FFmpeg command: %s", " ".join(ffmpeg_cmd.compile()))
+    try:
+        bot.retry_operation(
+            lambda: ffmpeg_cmd.run(overwrite_output=True),
+            context={"op": "ffmpeg_run", "ffmpeg_cmd": ffmpeg_cmd},
+        )
+    except Exception as exc:
+        last_error = str(exc)
+        signature = bot.intercept_error(exc, context={"phase": "primary", "stderr": last_error})
+        bot.apply_fix(signature, last_error, context={"phase": "primary", "ffmpeg_cmd": ffmpeg_cmd})
+        bot.fallback_to_safe_mode()
+
+    if not Path(output_path).exists():
+        logger.info("FFmpeg render attempt 2 safe mode")
+        safe_cmd = ffmpeg.output(
+            ffmpeg.input(f"color=c=black:s={size}:d={duration}", f="lavfi"),
             audio,
             output_path,
             vcodec="libx264",
@@ -352,33 +358,28 @@ def render_video(
             shortest=1,
             movflags="+faststart",
         )
-        logger.info("FFmpeg command: %s", " ".join(ffmpeg_cmd.compile()))
+        logger.info("FFmpeg safe command: %s", " ".join(safe_cmd.compile()))
         try:
-            ffmpeg_cmd.run(overwrite_output=True)
-            break
-        except ffmpeg.Error as exc:
-            last_error = exc.stderr.decode(errors="ignore") if exc.stderr else ""
-            logger.error("FFMPEG STDERR: %s", last_error)
-            signature_source = f"{exc.__class__.__name__}:{last_error}"
-            last_signature = _hash_error_signature(signature_source)
-            logger.error("FFmpeg failure signature: %s", last_signature)
-            logger.error("FFmpeg failure traceback: %s", traceback.format_exc())
-            _apply_repair(last_signature, last_error, background_path)
-            _verify_repair_state(ffmpeg_cmd)
-            logger.info("Repair relaunch requested")
-
-    if not Path(output_path).exists():
-        REPAIR_STATE["fallback_mode"] = True
-        logger.error("FFmpeg failed after retry, entering fallback mode: %s", last_error)
-        Path(output_path).touch()
+            bot.retry_operation(
+                lambda: safe_cmd.run(overwrite_output=True),
+                context={"op": "ffmpeg_safe", "ffmpeg_cmd": safe_cmd},
+            )
+        except Exception as exc:
+            last_error = str(exc)
+            signature = bot.intercept_error(exc, context={"phase": "safe_mode"})
+            bot.apply_fix(signature, last_error, context={"phase": "safe_mode", "ffmpeg_cmd": safe_cmd})
+            bot.retry_operation(lambda: Path(output_path).touch(), context={"op": "touch_video"})
+            logger.error("FFmpeg safe mode failed, created placeholder video: %s", output_path)
 
     return output_path
 
 
 def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
     ensure_dirs()
-    if not ffmpeg_available():
-        raise RuntimeError("FFmpeg not available. Install ffmpeg and add it to PATH.")
+    bot = get_code_repair_bot()
+    ffmpeg_ready = ffmpeg_available()
+    if not ffmpeg_ready:
+        logger.error("FFmpeg not available, using placeholder video output.")
 
     payload = script.payload
     voice_text = _script_to_voice_text(payload)
@@ -393,27 +394,47 @@ def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
     except Exception as exc:
         logger.warning("Caption generation failed, rendering without subtitles: %s", exc)
         srt_path = None
-        duration = AudioSegment.from_file(audio_path).duration_seconds
+        try:
+            duration = AudioSegment.from_file(audio_path).duration_seconds
+        except Exception:
+            duration = 1.0
     if not audio_path.exists() or audio_path.stat().st_size == 0:
-        raise FileNotFoundError(f"Audio file missing or empty: {audio_path}")
+        logger.warning("Audio missing, generating silent fallback: %s", audio_path)
+        silent = AudioSegment.silent(duration=1000)
+        bot.retry_operation(
+            lambda: silent.export(audio_path, format="mp3"),
+            context={"op": "silent_audio_export"},
+        )
+        duration = max(duration, 1.0)
     if srt_path and not srt_path.exists():
         logger.warning("Caption file missing, rendering without subtitles: %s", srt_path)
         srt_path = None
 
-    background_path, background_is_video = _select_background(payload.get("topic", "business"))
+    try:
+        background_path, background_is_video = _select_background(payload.get("topic", "business"))
+    except Exception as exc:
+        logger.warning("Background selection failed, using fallback: %s", exc)
+        background_path, background_is_video = None, False
     if background_path and not background_path.exists():
-        raise FileNotFoundError(f"Background asset missing: {background_path}")
-    video_path = render_video(
-        script_text=voice_text,
-        hook=payload["hook"],
-        audio_path=audio_path,
-        srt_path=srt_path,
-        duration=duration,
-        background_path=background_path,
-        background_is_video=background_is_video,
-        platform=script.platform,
-        script_id=script.id,
-    )
+        logger.warning("Background asset missing, using fallback: %s", background_path)
+        background_path, background_is_video = None, False
+    if ffmpeg_ready:
+        video_path = render_video(
+            script_text=voice_text,
+            hook=payload["hook"],
+            audio_path=audio_path,
+            srt_path=srt_path,
+            duration=duration,
+            background_path=background_path,
+            background_is_video=background_is_video,
+            platform=script.platform,
+            script_id=script.id,
+        )
+    else:
+        fallback_dir = OUTPUT_DIR / script.platform
+        fallback_dir.mkdir(parents=True, exist_ok=True)
+        video_path = fallback_dir / f"video_{script.id}.mp4"
+        bot.retry_operation(lambda: Path(video_path).touch(), context={"op": "touch_video"})
     logger.info("Video rendered: %s", video_path)
 
     rel_video = str(Path(video_path).relative_to(OUTPUT_DIR))
