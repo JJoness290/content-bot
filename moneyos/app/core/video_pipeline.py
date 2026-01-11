@@ -106,46 +106,18 @@ async def _edge_tts_save(text: str, output_path: Path) -> None:
     await communicate.save(str(output_path))
 
 
-def _pyttsx3_save(text: str, output_path: Path) -> None:
-    import pyttsx3
-
-    engine = pyttsx3.init()
-    engine.setProperty("rate", 170)
-    engine.save_to_file(text, str(output_path))
-    engine.runAndWait()
-
-
 def generate_voiceover(text: str, output_path: Path) -> Path:
     bot = get_code_repair_bot()
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        voice = VOICE_MANAGER.test_and_select("Most people are broke because of THIS habit.")
-        bot.retry_operation(
-            lambda: VOICE_MANAGER.synthesize(text, voice, rate="+15%"),
-            context={"op": "voice_select"},
-        )
-        if not VOICE_MANAGER.validate_voice(voice):
-            raise RuntimeError("voice_vibe_failed")
-        output_path.write_bytes((VOICE_MANAGER.output_dir / f"voice_{voice.name}.mp3").read_bytes())
-        return output_path
-    except Exception:
-        try:
-            wav_path = output_path.with_suffix(".wav")
-            bot.retry_operation(lambda: _pyttsx3_save(text, wav_path), context={"op": "pyttsx3_save"})
-            audio = AudioSegment.from_wav(wav_path)
-            bot.retry_operation(
-                lambda: audio.export(output_path, format="mp3"),
-                context={"op": "audio_export"},
-            )
-            return output_path
-        except Exception:
-            logger.warning("Voiceover generation failed, using silent fallback.")
-            silent = AudioSegment.silent(duration=1000)
-            bot.retry_operation(
-                lambda: silent.export(output_path, format="mp3"),
-                context={"op": "silent_audio_export"},
-            )
-            return output_path
+    voice = VOICE_MANAGER.test_and_select("Most people are broke because of THIS habit.")
+    bot.retry_operation(
+        lambda: VOICE_MANAGER.synthesize(text, voice, rate="+15%"),
+        context={"op": "voice_select"},
+    )
+    if not VOICE_MANAGER.validate_voice(voice):
+        raise RuntimeError("voice_vibe_failed")
+    output_path.write_bytes((VOICE_MANAGER.output_dir / f"voice_{voice.name}.mp3").read_bytes())
+    return output_path
 
 
 def _sentence_chunks(text: str) -> list[str]:
@@ -350,12 +322,7 @@ def render_video(
         manager.validate_platform_rules(platform, plan_duration, len(visuals))
         return visuals
     if not audio_path.exists() or audio_path.stat().st_size == 0:
-        logger.warning("Audio missing in render_video, generating silent fallback.")
-        silent = AudioSegment.silent(duration=1000)
-        bot.retry_operation(
-            lambda: silent.export(audio_path, format="mp3"),
-            context={"op": "silent_audio_export"},
-        )
+        raise RuntimeError("TTS failed: audio missing. Refusing to generate text-based subtitles fallback.")
     subtitles_available = bool(srt_path) and Path(srt_path).exists()
     if not subtitles_available:
         logger.warning("Captions missing, rendering without subtitles")
@@ -463,12 +430,18 @@ def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
         voice_text = _clean_text(payload.get("body", ""))
     else:
         voice_text = _script_to_voice_text(payload)
-    voice_text = manager.refine_script(voice_text)
-    assert isinstance(voice_text, str)
-    assert len(voice_text) > 200
-    assert "00:00:" not in voice_text
-    if script.platform == "tiktok":
-        voice_text = rules.extend_for_duration(voice_text, rules.TIKTOK_MIN_SECONDS)
+    spoken_script = manager.refine_script(voice_text)
+    if not isinstance(spoken_script, str):
+        raise RuntimeError("Spoken script is not a string.")
+    if len(spoken_script) <= 200:
+        raise RuntimeError("Spoken script too short; refusing to generate audio.")
+    if "00:00:" in spoken_script or "\n-->" in spoken_script:
+        raise RuntimeError("Subtitles were incorrectly treated as narration.")
+    script_output_dir = ROOT / "outputs"
+    script_output_dir.mkdir(parents=True, exist_ok=True)
+    script_path = script_output_dir / "latest_spoken_script.txt"
+    script_path.write_text(spoken_script, encoding="utf-8")
+    logger.info("[SCRIPT] %s", spoken_script[:200])
     timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
     platform_dir = TIKTOK_DIR if script.platform == "tiktok" else YOUTUBE_DIR
     audio_path = platform_dir / f"voice_{script.id}_{timestamp}.mp3"
@@ -484,43 +457,25 @@ def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
     update_progress(script.platform, "voice_generation", 25, 90)
     logger.info("[PIPELINE] generating voice from spoken script")
     duration = 0.0
-    for attempt in range(2):
-        generate_voiceover(voice_text, audio_path)
-        logger.info("[AUDIO] voice generated")
-        try:
-            duration = AudioSegment.from_file(audio_path).duration_seconds
-        except Exception:
-            duration = 0.0
-        if script.platform != "tiktok" or duration >= rules.TIKTOK_MIN_SECONDS:
-            break
-        logger.warning(
-            "Voiceover too short for TikTok (%.2fs), extending script (attempt %s).",
-            duration,
-            attempt + 1,
-        )
-        voice_text = rules.extend_for_duration(voice_text, rules.TIKTOK_MIN_SECONDS)
+    generate_voiceover(spoken_script, audio_path)
+    logger.info("[AUDIO] voice generated")
+    try:
+        duration = AudioSegment.from_file(audio_path).duration_seconds
+    except Exception:
+        duration = 0.0
+    if duration <= 0 or not audio_path.exists() or audio_path.stat().st_size == 0:
+        raise RuntimeError("TTS failed: audio missing. Refusing to generate text-based subtitles fallback.")
     update_progress(script.platform, "visual_selection", 45, 75)
     logger.info("[PIPELINE] generating subtitles from audio")
     try:
-        srt_path, duration = generate_captions(voice_text, audio_path, srt_path)
+        srt_path, duration = generate_captions(spoken_script, audio_path, srt_path)
         logger.info("[SUBS] subtitles generated from audio")
-        if script.platform == "tiktok" and duration < rules.TIKTOK_MIN_SECONDS:
-            voice_text = rules.extend_for_duration(voice_text, rules.TIKTOK_MIN_SECONDS)
-            generate_voiceover(voice_text, audio_path)
-            srt_path, duration = generate_captions(voice_text, audio_path, srt_path)
-            logger.info("[SUBS] subtitles generated from audio")
     except Exception as exc:
         logger.warning("Caption generation failed, rendering without subtitles: %s", exc)
         srt_path = None
         duration = max(duration, 1.0)
     if not audio_path.exists() or audio_path.stat().st_size == 0:
-        logger.warning("Audio missing, generating silent fallback: %s", audio_path)
-        silent = AudioSegment.silent(duration=1000)
-        bot.retry_operation(
-            lambda: silent.export(audio_path, format="mp3"),
-            context={"op": "silent_audio_export"},
-        )
-        duration = max(duration, 1.0)
+        raise RuntimeError("TTS failed: audio missing. Refusing to generate text-based subtitles fallback.")
     if srt_path and not srt_path.exists():
         logger.warning("Caption file missing, rendering without subtitles: %s", srt_path)
         srt_path = None
@@ -540,7 +495,7 @@ def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
         if not ffmpeg_ready:
             raise RuntimeError("FFmpeg not available.")
         video_path = render_video(
-            script_text=voice_text,
+            script_text=spoken_script,
             hook=payload["hook"],
             audio_path=audio_path,
             srt_path=srt_path,
