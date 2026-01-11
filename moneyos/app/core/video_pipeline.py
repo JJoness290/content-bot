@@ -84,18 +84,6 @@ def generate_script(topic: str, platform: str) -> dict[str, str]:
 
 def _script_to_voice_text(payload: dict[str, Any]) -> str:
     text = _clean_text(f"{payload['hook']} {payload['body']} {payload['cta']}")
-    words = text.split()
-    min_words = 75
-    max_words = 150
-    filler = (
-        " Here is the quick buyer checklist: prioritise reliability, compare annual costs, "
-        "and pick the option that saves you time every single week."
-    )
-    while len(words) < min_words:
-        text = _clean_text(f"{text} {filler}")
-        words = text.split()
-    if len(words) > max_words:
-        text = " ".join(words[:max_words])
     return text
 
 
@@ -465,11 +453,22 @@ def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
         duration = 0.0
     if duration <= 0 or not audio_path.exists() or audio_path.stat().st_size == 0:
         raise RuntimeError("TTS failed: audio missing. Refusing to generate text-based subtitles fallback.")
+    latest_outputs = ROOT / "outputs"
+    latest_outputs.mkdir(parents=True, exist_ok=True)
+    latest_audio_mp3 = latest_outputs / "latest_audio.mp3"
+    latest_audio_mp3.write_bytes(audio_path.read_bytes())
+    try:
+        audio_segment = AudioSegment.from_file(audio_path)
+        audio_segment.export(latest_outputs / "latest_audio.wav", format="wav")
+    except Exception:
+        logger.warning("Failed to export latest_audio.wav.")
     update_progress(script.platform, "visual_selection", 45, 75)
     logger.info("[PIPELINE] generating subtitles from audio")
     try:
         srt_path, duration = generate_captions(spoken_script, audio_path, srt_path)
         logger.info("[SUBS] subtitles generated from audio")
+        latest_captions = latest_outputs / "latest_captions.srt"
+        latest_captions.write_bytes(srt_path.read_bytes())
     except Exception as exc:
         logger.warning("Caption generation failed, rendering without subtitles: %s", exc)
         srt_path = None
@@ -525,6 +524,8 @@ def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
     update_progress(script.platform, "validation", 95, 10)
     logger.info("Video rendered: %s", video_path)
     update_progress(script.platform, "complete", 100, 0)
+    latest_video = latest_outputs / "latest_video.mp4"
+    latest_video.write_bytes(Path(video_path).read_bytes())
 
     rel_video = str(Path(video_path).relative_to(OUTPUT_DIR))
     rel_srt = str(srt_path.relative_to(OUTPUT_DIR)) if srt_path else ""
