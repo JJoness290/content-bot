@@ -187,10 +187,6 @@ def generate_captions(text: str, audio_path: Path, output_path: Path) -> tuple[P
     return output_path, duration
 
 
-def generate_srt(text: str, audio_path: Path, output_path: Path) -> tuple[Path, float]:
-    return generate_captions(text, audio_path, output_path)
-
-
 def _pick_local_background() -> tuple[Path | None, bool]:
     videos = list(VIDEO_BG_DIR.glob("*.mp4"))
     images = list(IMAGE_BG_DIR.glob("*.jpg")) + list(IMAGE_BG_DIR.glob("*.png"))
@@ -468,6 +464,9 @@ def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
     else:
         voice_text = _script_to_voice_text(payload)
     voice_text = manager.refine_script(voice_text)
+    assert isinstance(voice_text, str)
+    assert len(voice_text) > 200
+    assert "00:00:" not in voice_text
     if script.platform == "tiktok":
         voice_text = rules.extend_for_duration(voice_text, rules.TIKTOK_MIN_SECONDS)
     timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
@@ -483,6 +482,7 @@ def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
         return {"status": "blocked – requires code fix", "reason": preflight_result.message}
 
     update_progress(script.platform, "voice_generation", 25, 90)
+    logger.info("[PIPELINE] generating voice from spoken script")
     duration = 0.0
     for attempt in range(2):
         generate_voiceover(voice_text, audio_path)
@@ -500,6 +500,7 @@ def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
         )
         voice_text = rules.extend_for_duration(voice_text, rules.TIKTOK_MIN_SECONDS)
     update_progress(script.platform, "visual_selection", 45, 75)
+    logger.info("[PIPELINE] generating subtitles from audio")
     try:
         srt_path, duration = generate_captions(voice_text, audio_path, srt_path)
         logger.info("[SUBS] subtitles generated from audio")

@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 def generate_render_package(idea: dict[str, Any], platform: str) -> dict[str, Any]:
+    logger.info("[PIPELINE] using phased script engine")
     acl = build_acl(idea, platform)
     errors = validate_acl(acl)
     repairs = 0

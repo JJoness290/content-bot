@@ -4,6 +4,9 @@ from typing import Any
 
 
 def render_spoken_script(acl: dict[str, Any]) -> str:
+    spoken_script = acl.get("spoken_script")
+    if isinstance(spoken_script, str) and spoken_script.strip():
+        return spoken_script.strip()
     parts: list[str] = []
     hook = acl.get("hook", {}).get("narration", "").strip()
     if hook:

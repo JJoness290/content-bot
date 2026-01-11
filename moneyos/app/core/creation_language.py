@@ -70,24 +70,24 @@ def generate_phase(phase: str, rng: random.Random, topic: str) -> str:
     prompt = PHASE_PROMPTS[phase]
     pools = {
         "hook": [
-            "Quick reality check: your phone is way too convincing.",
-            "Real talk, that tiny swipe is running your whole day.",
-            "You’re not lazy, your phone is just too good at pulling you in.",
+            "Quick reality check: your phone is way too convincing and it keeps stealing your attention before you even notice.",
+            "Real talk, that tiny swipe is running your whole day and it’s cutting your focus into tiny pieces.",
+            "You’re not lazy, your phone is just too good at pulling you in and making time disappear fast.",
         ],
         "explain": [
-            "The habit is small, but it stacks up fast and drains your time.",
-            f"It’s the routine around {topic.lower()} that quietly shifts your day.",
-            "Once the cue hits, you scroll without thinking and lose momentum.",
+            "The habit is small, but it stacks up fast and drains your time in the quiet parts of your day.",
+            f"It’s the routine around {topic.lower()} that quietly shifts your day and sets the tone for everything else.",
+            "Once the cue hits, you scroll without thinking and lose momentum that you need later.",
         ],
         "reinforce": [
-            "That loop costs you energy in the morning and focus later on.",
-            "The longer you sit in it, the harder it is to break the rhythm.",
-            "It’s not about willpower, it’s about changing the first cue.",
+            "That loop costs you energy in the morning and focus later on, so the smallest habits feel heavier than they should.",
+            "The longer you sit in it, the harder it is to break the rhythm and the more normal it starts to feel.",
+            "It’s not about willpower, it’s about changing the first cue so the whole routine shifts with less effort.",
         ],
         "close": [
-            "So I’m cutting it off tonight and keeping it simple.",
-            "I’m done with it tonight, quiet reset and no drama.",
-            "Tonight I’m stepping away and starting fresh.",
+            "So I’m cutting it off tonight and keeping it simple, because the reset has to be calm and repeatable.",
+            "I’m done with it tonight, quiet reset and no drama, just a clean start for tomorrow.",
+            "Tonight I’m stepping away and starting fresh, one small change that makes the next day easier.",
         ],
     }
     pool = pools.get(phase, [""])
@@ -116,7 +116,7 @@ def build_acl(idea: dict[str, Any], platform: str) -> dict[str, Any]:
     topic = idea.get("topic", "")
     tone = "upbeat"
     pacing = "fast"
-    _, parts = generate_script(rng, topic)
+    spoken_script, parts = generate_script(rng, topic)
     hook_text = parts["hook"]
     explain_text = parts["explain"]
     reinforce_text = parts["reinforce"]
@@ -144,6 +144,7 @@ def build_acl(idea: dict[str, Any], platform: str) -> dict[str, Any]:
             "narration": hook_text,
             "energy": "high",
         },
+        "spoken_script": spoken_script,
         "beats": beats,
         "outro": outro,
     }
