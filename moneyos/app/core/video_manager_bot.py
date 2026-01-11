@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import math
 import random
 import re
 from dataclasses import dataclass
@@ -25,6 +24,15 @@ class TrendSignals:
 class VideoManagerBot:
     def __init__(self) -> None:
         self.rules = VideoRulesManager()
+
+    def enforce_duration(self, seconds: float) -> float:
+        return max(self.rules.TIKTOK_TARGET_SECONDS, seconds)
+
+    def validate_platform_rules(self, platform: str, duration: float, visuals_count: int) -> None:
+        plan = self.rules.plan_visuals(platform, duration)
+        self.rules.validate_plan(platform, duration, plan)
+        if visuals_count < self.rules.TIKTOK_MIN_VISUALS and platform == "tiktok":
+            raise ValueError("Insufficient visuals for TikTok.")
 
     def _fetch_trending_hashtags(self) -> list[str]:
         url = "https://www.tiktok.com/trending"
@@ -115,6 +123,9 @@ class VideoManagerBot:
                 continue
 
         if len(visuals) < visuals_needed:
+            visuals.extend(self._fallback_visuals(visuals_dir, visuals_needed - len(visuals)))
+
+        if len(visuals) < visuals_needed:
             raise RuntimeError("Insufficient visuals for rendering.")
 
         return visuals
@@ -127,3 +138,27 @@ class VideoManagerBot:
         script_text = script_text.replace("you are", "you're").replace("we are", "we're")
         script_text = script_text.replace("it is", "it's")
         return script_text
+
+    def _fallback_visuals(self, visuals_dir: Path, count: int) -> list[Path]:
+        visuals: list[Path] = []
+        for idx in range(count):
+            filename = visuals_dir / f"fallback_{idx+1}.ppm"
+            self._write_ppm_pattern(filename, 720, 1280, idx)
+            visuals.append(filename)
+        return visuals
+
+    def _write_ppm_pattern(self, path: Path, width: int, height: int, seed: int) -> None:
+        random.seed(seed)
+        header = f"P6\n{width} {height}\n255\n".encode()
+        pixels = bytearray()
+        for y in range(height):
+            for x in range(width):
+                r = (x * 255) // width
+                g = (y * 255) // height
+                b = (r + g + (seed * 13)) % 255
+                if (x + y + seed) % 23 == 0:
+                    r = (r + 80) % 255
+                    g = (g + 40) % 255
+                    b = (b + 60) % 255
+                pixels.extend([r, g, b])
+        path.write_bytes(header + pixels)

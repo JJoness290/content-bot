@@ -17,6 +17,7 @@ from pydub import AudioSegment
 import subprocess
 
 from app.core.code_repair_bot import get_code_repair_bot
+from app.core.preflight_validator import PreflightValidator
 from app.core.progress import update_progress
 from app.core.video_manager_bot import VideoManagerBot
 from app.core.video_queue import insert_output, update_script_payload
@@ -234,6 +235,11 @@ def _select_background(topic: str) -> tuple[Path | None, bool]:
     return _pexels_background(topic)
 
 
+MANAGER_BOT = VideoManagerBot()
+RULES_MANAGER = VideoRulesManager()
+PREFLIGHT_VALIDATOR = PreflightValidator()
+
+
 def render_video(
     *,
     script_text: str,
@@ -247,8 +253,8 @@ def render_video(
     script_id: int,
 ) -> Path:
     bot = get_code_repair_bot()
-    rules = VideoRulesManager()
-    manager = VideoManagerBot()
+    rules = RULES_MANAGER
+    manager = MANAGER_BOT
     ensure_dirs()
     audio_path = audio_path.resolve()
     srt_path = srt_path.resolve().as_posix() if srt_path else None
@@ -410,7 +416,9 @@ def render_video(
 def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
     ensure_dirs()
     bot = get_code_repair_bot()
-    rules = VideoRulesManager()
+    rules = RULES_MANAGER
+    manager = MANAGER_BOT
+    preflight = PREFLIGHT_VALIDATOR
     update_progress(script.platform, "script_generation", 10, 120)
     ffmpeg_ready = ffmpeg_available()
     if not ffmpeg_ready:
@@ -425,6 +433,13 @@ def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
     platform_dir = TIKTOK_DIR if script.platform == "tiktok" else YOUTUBE_DIR
     audio_path = platform_dir / f"voice_{script.id}_{timestamp}.mp3"
     srt_path = platform_dir / f"captions_{script.id}_{timestamp}.srt"
+    output_dir = OUTPUT_DIR / script.platform
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / f"video_{script.id}.mp4"
+    preflight_result = preflight.validate_or_repair(output_path, script.platform)
+    if not preflight_result.ok:
+        update_progress(script.platform, "blocked", 0, 0)
+        return {"status": "blocked – requires code fix", "reason": preflight_result.message}
 
     update_progress(script.platform, "voice_generation", 25, 90)
     duration = 0.0
@@ -466,9 +481,6 @@ def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
     if background_path and not background_path.exists():
         logger.warning("Background asset missing, using fallback: %s", background_path)
         background_path, background_is_video = None, False
-    output_dir = OUTPUT_DIR / script.platform
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / f"video_{script.id}.mp4"
     update_progress(script.platform, "rendering", 80, 45)
     try:
         if not ffmpeg_ready:
@@ -485,6 +497,10 @@ def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
             script_id=script.id,
         )
     except Exception as exc:
+        tier = bot.classify_error(exc)
+        if tier == "tier3":
+            update_progress(script.platform, "blocked", 0, 0)
+            return {"status": "blocked – requires code fix", "reason": str(exc)}
         signature = bot.intercept_error(exc, context={"phase": "render", "stderr": str(exc)})
         bot.apply_fix(
             signature,

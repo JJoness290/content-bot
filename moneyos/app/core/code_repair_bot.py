@@ -85,6 +85,13 @@ class CodeRepairBot:
         logger.error("RepairBot traceback: %s", traceback.format_exc())
         return signature
 
+    def classify_error(self, error: Exception) -> str:
+        if isinstance(error, (NameError, ImportError, AttributeError, SyntaxError)):
+            return "tier3"
+        if isinstance(error, (FileNotFoundError, RuntimeError)):
+            return "tier2"
+        return "tier1"
+
     def apply_fix(self, signature: str, stderr: str = "", context: dict[str, Any] | None = None) -> bool:
         if signature in self._memory.applied_repairs:
             return False
@@ -126,7 +133,8 @@ class CodeRepairBot:
             self._memory.applied_repairs.add(signature)
             self._save_memory()
             self.verify_repair(context)
-            self.restart_app()
+            if (context or {}).get("restart", True):
+                self.restart_app()
         return applied
 
     def retry_operation(self, operation: Callable[[], Any], context: dict[str, Any] | None = None) -> Any:
