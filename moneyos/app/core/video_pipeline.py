@@ -250,10 +250,12 @@ def render_video(
     background_path = background_path.resolve() if background_path else None
     output_dir = OUTPUT_DIR / platform
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = str((output_dir / f"video_{script_id}.mp4").resolve())
-    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    assert isinstance(output_path, str)
-    assert output_path.endswith(".mp4")
+    output_path = (output_dir / f"video_{script_id}.mp4").resolve()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    bot.retry_operation(lambda: output_path.touch(exist_ok=True), context={"op": "touch_video"})
+    assert output_path.exists()
+    assert output_path.suffix == ".mp4"
+    assert not output_path.stem.isdigit()
     logger.info("FFmpeg output path: %s", output_path)
     size = "1080x1920"
 
@@ -325,7 +327,7 @@ def render_video(
     ffmpeg_cmd = ffmpeg.output(
         render_stream,
         audio,
-        output_path,
+        output_path.as_posix(),
         vcodec="libx264",
         acodec="aac",
         pix_fmt="yuv420p",
@@ -345,12 +347,17 @@ def render_video(
         bot.apply_fix(signature, last_error, context={"phase": "primary", "ffmpeg_cmd": ffmpeg_cmd})
         bot.fallback_to_safe_mode()
 
-    if not Path(output_path).exists():
+    if not output_path.exists() or output_path.stat().st_size == 0:
         logger.info("FFmpeg render attempt 2 safe mode")
+        safe_output_path = (output_dir / f"video_{script_id}_safe.mp4").resolve()
+        safe_output_path.parent.mkdir(parents=True, exist_ok=True)
+        bot.retry_operation(lambda: safe_output_path.touch(exist_ok=True), context={"op": "touch_video"})
+        assert safe_output_path.exists()
+        assert safe_output_path.suffix == ".mp4"
         safe_cmd = ffmpeg.output(
             ffmpeg.input(f"color=c=black:s={size}:d={duration}", f="lavfi"),
             audio,
-            output_path,
+            safe_output_path.as_posix(),
             vcodec="libx264",
             acodec="aac",
             pix_fmt="yuv420p",
@@ -364,12 +371,14 @@ def render_video(
                 lambda: safe_cmd.run(overwrite_output=True),
                 context={"op": "ffmpeg_safe", "ffmpeg_cmd": safe_cmd},
             )
+            output_path = safe_output_path
         except Exception as exc:
             last_error = str(exc)
             signature = bot.intercept_error(exc, context={"phase": "safe_mode"})
             bot.apply_fix(signature, last_error, context={"phase": "safe_mode", "ffmpeg_cmd": safe_cmd})
-            bot.retry_operation(lambda: Path(output_path).touch(), context={"op": "touch_video"})
-            logger.error("FFmpeg safe mode failed, created placeholder video: %s", output_path)
+            bot.retry_operation(lambda: safe_output_path.touch(exist_ok=True), context={"op": "touch_video"})
+            logger.error("FFmpeg safe mode failed, created placeholder video: %s", safe_output_path)
+            output_path = safe_output_path
 
     return output_path
 
