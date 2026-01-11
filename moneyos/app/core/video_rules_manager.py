@@ -61,6 +61,15 @@ class VideoRulesManager:
         if plan.total_duration < voice_duration:
             raise ValueError("Timeline must cover voice duration.")
 
+    def enforce_plan(self, platform: str, voice_duration: float) -> VisualPlan:
+        duration = voice_duration
+        if platform == "tiktok":
+            duration = max(self.TIKTOK_TARGET_SECONDS, voice_duration)
+        plan = self.plan_visuals(platform, duration)
+        if plan.total_duration < duration:
+            plan = self.plan_visuals(platform, duration)
+        return plan
+
     def color_sequence(self, count: int) -> Iterable[str]:
         palette = [
             "navy",

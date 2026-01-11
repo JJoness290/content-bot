@@ -337,7 +337,9 @@ def render_video(
 
     last_error = ""
     memory = bot.memory
-    plan = rules.plan_visuals(platform, duration)
+    if platform == "tiktok" and duration < rules.TIKTOK_MIN_SECONDS:
+        duration = rules.TIKTOK_TARGET_SECONDS
+    plan = rules.enforce_plan(platform, duration)
     rules.validate_plan(platform, duration, plan)
     visuals = manager.generate_visuals(platform, script_text, plan.total_duration)
     include_subtitles = subtitles_available and not memory.disabled_subtitles
@@ -419,7 +421,8 @@ def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
     rules = RULES_MANAGER
     manager = MANAGER_BOT
     preflight = PREFLIGHT_VALIDATOR
-    update_progress(script.platform, "script_generation", 10, 120)
+    update_progress(script.platform, "planning", 5, 140)
+    update_progress(script.platform, "script_fixing", 10, 120)
     ffmpeg_ready = ffmpeg_available()
     if not ffmpeg_ready:
         logger.error("FFmpeg not available, cannot generate video.")
@@ -452,7 +455,7 @@ def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
         if script.platform != "tiktok" or duration >= 60:
             break
         voice_text = rules.extend_for_duration(voice_text, 62.0)
-    update_progress(script.platform, "visual_generation", 45, 75)
+    update_progress(script.platform, "visual_selection", 45, 75)
     try:
         srt_path, duration = generate_captions(voice_text, audio_path, srt_path)
     except Exception as exc:
@@ -497,6 +500,7 @@ def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
             script_id=script.id,
         )
     except Exception as exc:
+        update_progress(script.platform, "repairing", 85, 45)
         tier = bot.classify_error(exc)
         if tier == "tier3":
             update_progress(script.platform, "blocked", 0, 0)

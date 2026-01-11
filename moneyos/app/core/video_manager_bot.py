@@ -137,6 +137,8 @@ class VideoManagerBot:
         script_text = script_text.replace("do not", "don't").replace("cannot", "can't")
         script_text = script_text.replace("you are", "you're").replace("we are", "we're")
         script_text = script_text.replace("it is", "it's")
+        script_text = script_text.replace("Here is", "Here's").replace("There is", "There's")
+        script_text = script_text.replace(". ", ".\n")
         return script_text
 
     def _fallback_visuals(self, visuals_dir: Path, count: int) -> list[Path]:
