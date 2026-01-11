@@ -3,6 +3,8 @@ from __future__ import annotations
 import compileall
 import json
 import logging
+import os
+import sys
 import traceback
 from dataclasses import dataclass, field
 from hashlib import sha256
@@ -88,6 +90,21 @@ class CodeRepairBot:
 
         stderr_lower = stderr.lower()
         applied = False
+        context = context or {}
+        fix = context.get("fix")
+        if fix == "ensure_output_dir":
+            output_dir = context.get("output_dir")
+            if output_dir:
+                Path(output_dir).mkdir(parents=True, exist_ok=True)
+                applied = True
+        if fix == "ensure_output_path":
+            output_path = context.get("output_path")
+            if output_path:
+                path = Path(output_path)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                if not path.exists():
+                    path.touch()
+                applied = True
         if "unable to choose an output format for" in stderr_lower:
             applied = True
         if "subtitles" in stderr_lower or ".srt" in stderr_lower or "caption" in stderr_lower:
@@ -107,6 +124,7 @@ class CodeRepairBot:
             self._memory.applied_repairs.add(signature)
             self._save_memory()
             self.verify_repair(context)
+            self.restart_app()
         return applied
 
     def retry_operation(self, operation: Callable[[], Any], context: dict[str, Any] | None = None) -> Any:
@@ -144,6 +162,10 @@ class CodeRepairBot:
         if ffmpeg_cmd is not None:
             ffmpeg_cmd.compile()
         logger.info("RepairBot verification complete; relaunch requested")
+
+    def restart_app(self) -> None:
+        logger.info("RepairBot restarting application")
+        os.execv(sys.executable, [sys.executable] + sys.argv)
 
 
 _BOT: CodeRepairBot | None = None
