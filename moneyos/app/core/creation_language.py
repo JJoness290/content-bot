@@ -5,33 +5,30 @@ import logging
 import random
 from typing import Any
 
-HOOK_PROMPT = """
-Write a short, high-energy hook.
-You may tease or provoke curiosity.
-Do NOT explain anything.
-Max 2 sentences.
-"""
+HOOK_PROMPT = (
+    "Write a short, high-impact hook. "
+    "You may tease or provoke curiosity. "
+    "Do NOT explain anything. "
+    "Max 2 sentences."
+)
 
-EXPLAIN_PROMPT = """
-Explain the idea clearly and directly.
-Do NOT tease.
-Do NOT ask questions.
-Do NOT use curiosity language.
-State facts or observations plainly.
-"""
+EXPLAIN_PROMPT = (
+    "Explain the idea clearly and directly. "
+    "No teasing. "
+    "No rhetorical questions. "
+    "State facts plainly."
+)
 
-REINFORCE_PROMPT = """
-Expand on the explanation with examples or consequences.
-No hooks.
-No teasers.
-No rhetorical questions.
-"""
+REINFORCE_PROMPT = (
+    "Expand on the explanation with concrete examples, "
+    "consequences, or clarification. "
+    "No hooks. No teasing."
+)
 
-CLOSE_PROMPT = """
-Summarise the idea and give a simple call to action.
-No teasing.
-No new ideas.
-"""
+CLOSE_PROMPT = (
+    "Summarise the idea and give a simple call to action. "
+    "No new ideas. No teasing."
+)
 
 PHASE_PROMPTS = {
     "hook": HOOK_PROMPT,
@@ -40,13 +37,14 @@ PHASE_PROMPTS = {
     "close": CLOSE_PROMPT,
 }
 
-HOOK_PATTERNS = [
-    "?",
-    "did you know",
-    "what if",
+HOOK_PHRASES = [
+    "nobody talks about",
+    "wait for it",
+    "this part is wild",
+    "here's the trick",
+    "bet you didn't know",
     "most people",
-    "you won't believe",
-    "here's why",
+    "did you know",
 ]
 
 logger = logging.getLogger(__name__)
@@ -60,7 +58,7 @@ def _seeded_random(idea: dict[str, Any]) -> random.Random:
 
 def _contains_hook_language(text: str) -> bool:
     lowered = text.lower()
-    return any(pattern in lowered for pattern in HOOK_PATTERNS)
+    return any(pattern in lowered for pattern in HOOK_PHRASES)
 
 
 def _llm_generate(prompt: str, rng: random.Random, pool: list[str]) -> str:
@@ -68,7 +66,7 @@ def _llm_generate(prompt: str, rng: random.Random, pool: list[str]) -> str:
     return rng.choice(pool)
 
 
-def _generate_phase_text(phase: str, rng: random.Random, topic: str) -> str:
+def generate_phase(phase: str, rng: random.Random, topic: str) -> str:
     prompt = PHASE_PROMPTS[phase]
     pools = {
         "hook": [
@@ -93,14 +91,24 @@ def _generate_phase_text(phase: str, rng: random.Random, topic: str) -> str:
         ],
     }
     pool = pools.get(phase, [""])
-    for attempt in range(3):
-        text = _llm_generate(prompt, rng, pool)
-        if phase == "hook" or not _contains_hook_language(text):
-            logger.info("[PHASE] %s generated", phase)
-            return text
+    text = _llm_generate(prompt, rng, pool)
+    if phase != "hook" and _contains_hook_language(text):
         logger.info("[PHASE] %s rejected — hook language detected", phase)
-    logger.info("[PHASE] %s regenerated successfully", phase)
-    return _llm_generate(prompt, rng, pool)
+        text = _llm_generate(prompt, rng, pool)
+        logger.info("[PHASE] %s regenerated successfully", phase)
+    logger.info("[GEN] %s generated", phase)
+    return text
+
+
+def generate_script(rng: random.Random, topic: str) -> tuple[str, dict[str, str]]:
+    parts = {
+        "hook": generate_phase("hook", rng, topic),
+        "explain": generate_phase("explain", rng, topic),
+        "reinforce": generate_phase("reinforce", rng, topic),
+        "close": generate_phase("close", rng, topic),
+    }
+    script = " ".join(parts.values())
+    return script, parts
 
 
 def build_acl(idea: dict[str, Any], platform: str) -> dict[str, Any]:
@@ -108,10 +116,11 @@ def build_acl(idea: dict[str, Any], platform: str) -> dict[str, Any]:
     topic = idea.get("topic", "")
     tone = "upbeat"
     pacing = "fast"
-    hook_text = _generate_phase_text("hook", rng, topic)
-    explain_text = _generate_phase_text("explain", rng, topic)
-    reinforce_text = _generate_phase_text("reinforce", rng, topic)
-    close_text = _generate_phase_text("close", rng, topic)
+    _, parts = generate_script(rng, topic)
+    hook_text = parts["hook"]
+    explain_text = parts["explain"]
+    reinforce_text = parts["reinforce"]
+    close_text = parts["close"]
     beats = [
         {"narration": explain_text, "pacing": "medium", "purpose": "explanation"},
         {"narration": reinforce_text, "pacing": "medium", "purpose": "reinforcement"},

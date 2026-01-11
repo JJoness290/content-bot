@@ -1,19 +1,11 @@
 from __future__ import annotations
 
-import hashlib
 import logging
-import random
 from typing import Any
 
-from app.core.scene_planner import estimate_duration, extend_outro_text
+from app.core.scene_planner import estimate_duration
 
 logger = logging.getLogger(__name__)
-
-
-def _seeded_random(acl: dict[str, Any]) -> random.Random:
-    seed_src = f"{acl.get('meta', {}).get('platform','')}-{acl.get('hook', {}).get('narration','')}"
-    seed = int(hashlib.sha256(seed_src.encode("utf-8")).hexdigest(), 16)
-    return random.Random(seed)
 
 
 def _default_beat_pool(topic: str) -> list[str]:
@@ -28,21 +20,18 @@ def _default_beat_pool(topic: str) -> list[str]:
 
 
 def auto_repair(acl: dict[str, Any], target_duration: float) -> dict[str, Any]:
-    rng = _seeded_random(acl)
     topic = acl.get("topic", acl.get("meta", {}).get("topic", ""))
     beats = acl.get("beats", [])
     if not beats:
         beats = []
     if len(beats) < 3:
         pool = _default_beat_pool(topic)
-        while len(beats) < 3:
-            beats.append(
-                {
-                    "narration": pool[len(beats) % len(pool)],
-                    "pacing": "fast",
-                    "purpose": "reinforcement",
-                }
-            )
+        filler = [
+            {"narration": pool[0], "pacing": "fast", "purpose": "reinforcement"},
+            {"narration": pool[1], "pacing": "fast", "purpose": "reinforcement"},
+            {"narration": pool[2], "pacing": "fast", "purpose": "reinforcement"},
+        ]
+        beats = (beats + filler)[:3]
         logger.info("Repair bot appended missing beats.")
     acl["beats"] = beats
 
@@ -62,17 +51,11 @@ def auto_repair(acl: dict[str, Any], target_duration: float) -> dict[str, Any]:
 
     hook_text = acl.get("hook", {}).get("narration", "").strip()
     beats_text = [beat.get("narration", "").strip() for beat in acl.get("beats", [])]
-    outro = acl.get("outro", {})
-    outro_text = outro.get("narration", "").strip()
-    outro_pacing = "medium"
+    outro_text = acl.get("outro", {}).get("narration", "").strip()
     total_estimate = estimate_duration(hook_text, "fast") + sum(
         estimate_duration(text, "medium") for text in beats_text if text
-    ) + estimate_duration(outro_text, outro_pacing)
+    ) + estimate_duration(outro_text, "medium")
     if total_estimate < target_duration:
-        remaining = target_duration - total_estimate
-        base_duration = estimate_duration(outro_text, outro_pacing)
-        outro["narration"] = extend_outro_text(outro_text, base_duration + remaining, outro_pacing, rng)
-        acl["outro"] = outro
-        logger.info("Repair bot extended outro to hit duration.")
+        logger.info("Repair bot detected short duration (%.0fs).", total_estimate)
 
     return acl

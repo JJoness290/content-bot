@@ -486,7 +486,7 @@ def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
     duration = 0.0
     for attempt in range(2):
         generate_voiceover(voice_text, audio_path)
-        logger.info("[VOICE] TTS audio created")
+        logger.info("[AUDIO] voice generated")
         try:
             duration = AudioSegment.from_file(audio_path).duration_seconds
         except Exception:
