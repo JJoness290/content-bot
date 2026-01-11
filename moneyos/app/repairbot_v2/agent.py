@@ -4,12 +4,12 @@ import json
 from pathlib import Path
 from typing import Any
 
-from moneyos.repairbot_v2.memory import append_memory, update_tactic_scores
-from moneyos.repairbot_v2.planner import build_plan
-from moneyos.repairbot_v2.preflight import run_preflight
-from moneyos.repairbot_v2.snapshot import ensure_baseline, pre_attempt_snapshot, rollback_to_baseline
-from moneyos.repairbot_v2.patcher import apply_patch
-from moneyos.repairbot_v2.verify import working_order
+from app.repairbot_v2.memory import append_memory, update_tactic_scores
+from app.repairbot_v2.planner import build_plan
+from app.repairbot_v2.preflight import run_preflight
+from app.repairbot_v2.snapshot import ensure_baseline, pre_attempt_snapshot, rollback_to_baseline
+from app.repairbot_v2.patcher import apply_patch
+from app.repairbot_v2.verify import working_order
 
 
 def run_agent(root: Path, outputs: Path, intent: dict[str, Any], once: bool = False) -> dict[str, Any]:

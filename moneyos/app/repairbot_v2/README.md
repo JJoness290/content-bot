@@ -5,8 +5,8 @@ RepairBot v2 is an autonomous repair loop for MoneyOS.
 ## Run
 
 ```bash
-python -m moneyos.repairbot_v2.run --mode once
-python -m moneyos.repairbot_v2.run --mode watch
+python -m app.repairbot_v2.run --mode once
+python -m app.repairbot_v2.run --mode watch
 ```
 
 ## UI

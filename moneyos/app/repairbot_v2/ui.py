@@ -65,7 +65,7 @@ def repairbot_memory() -> list[dict[str, Any]]:
 
 @router.post("/api/repairbot/run-once")
 def repairbot_run_once() -> dict[str, Any]:
-    from moneyos.repairbot_v2.agent import run_agent
+    from app.repairbot_v2.agent import run_agent
     root = Path(__file__).resolve().parents[2]
     intent_path = root / "moneyos_intent.yaml"
     intent = {}

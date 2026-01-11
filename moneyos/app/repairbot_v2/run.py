@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from moneyos.repairbot_v2.agent import run_agent
+from app.repairbot_v2.agent import run_agent
 
 
 def main() -> None:

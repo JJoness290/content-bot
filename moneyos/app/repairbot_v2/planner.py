@@ -4,8 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from moneyos.repairbot_v2.llm_client import LLMRouter
-from moneyos.repairbot_v2.prompts import SYSTEM_PROMPTS
+from app.repairbot_v2.llm_client import LLMRouter
+from app.repairbot_v2.prompts import SYSTEM_PROMPTS
 
 
 def build_plan(intent: dict[str, Any], preflight: dict[str, Any], outputs: Path) -> dict[str, Any]:

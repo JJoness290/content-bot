@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from moneyos.repairbot_v2.preflight import run_preflight
+from app.repairbot_v2.preflight import run_preflight
 
 
 def collect_signals(root: Path, outputs: Path) -> dict[str, Any]:

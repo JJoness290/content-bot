@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from moneyos.repairbot_v2.repo_map import build_repo_map
+from app.repairbot_v2.repo_map import build_repo_map
 
 HOOK_LINES = [
     "Nobody talks about this but it works.",
