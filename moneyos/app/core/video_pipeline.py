@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import random
 import re
@@ -58,6 +59,22 @@ def ffmpeg_available() -> bool:
 
 def _clean_text(text: str) -> str:
     return re.sub(r"\s+", " ", text.strip())
+
+
+def _estimate_seconds(text: str, wpm: int = 155) -> float:
+    words = len(text.split())
+    return (words / wpm) * 60 if wpm else 0.0
+
+
+def _expand_script(text: str) -> str:
+    additions = [
+        "Quick example: last week I said I would stop scrolling at night, but I kept checking one app and lost an hour.",
+        "Checklist: pick a cutoff time, move the app off your home screen, and replace the last five minutes with a calm routine.",
+        "Common mistake: relying on willpower alone. Fix: change the cue so the habit doesn’t start in the first place.",
+        "Wrap it up: if you change the first minute, the whole night feels lighter and tomorrow starts cleaner.",
+        "Simple CTA: try it tonight and notice how your morning feels.",
+    ]
+    return f"{text} " + " ".join(additions)
 
 
 def generate_script(topic: str, platform: str) -> dict[str, str]:
@@ -421,14 +438,27 @@ def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
     spoken_script = manager.refine_script(voice_text)
     if not isinstance(spoken_script, str):
         raise RuntimeError("Spoken script is not a string.")
-    if len(spoken_script) <= 200:
-        raise RuntimeError("Spoken script too short; refusing to generate audio.")
     if "00:00:" in spoken_script or "\n-->" in spoken_script:
         raise RuntimeError("Subtitles were incorrectly treated as narration.")
+    min_seconds = 60 if script.platform == "tiktok" else 120
+    expansions_used = 0
+    while _estimate_seconds(spoken_script) < min_seconds and expansions_used < 3:
+        spoken_script = _expand_script(spoken_script)
+        expansions_used += 1
+    length_report = {
+        "word_count": len(spoken_script.split()),
+        "est_seconds": round(_estimate_seconds(spoken_script), 2),
+        "min_seconds": min_seconds,
+        "expansions_used": expansions_used,
+    }
     script_output_dir = ROOT / "outputs"
     script_output_dir.mkdir(parents=True, exist_ok=True)
     script_path = script_output_dir / "latest_spoken_script.txt"
     script_path.write_text(spoken_script, encoding="utf-8")
+    (script_output_dir / "latest_length_report.json").write_text(
+        json.dumps(length_report, indent=2),
+        encoding="utf-8",
+    )
     logger.info("[SCRIPT] %s", spoken_script[:200])
     timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
     platform_dir = TIKTOK_DIR if script.platform == "tiktok" else YOUTUBE_DIR

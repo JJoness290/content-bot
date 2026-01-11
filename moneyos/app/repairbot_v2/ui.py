@@ -13,7 +13,10 @@ router = APIRouter()
 def _read_json(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
-    return json.loads(path.read_text(encoding="utf-8"))
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return {"error": f"failed_to_parse:{exc}"}
 
 
 def _read_text(path: Path) -> str:

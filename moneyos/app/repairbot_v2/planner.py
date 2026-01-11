@@ -28,6 +28,7 @@ def build_plan(intent: dict[str, Any], preflight: dict[str, Any], outputs: Path)
     outputs.mkdir(parents=True, exist_ok=True)
     (outputs / "plan_latest.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
     (outputs / "plan_latest.md").write_text("# Plan\n\n" + json.dumps(plan, indent=2), encoding="utf-8")
+    (outputs / "last_plan.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
     preview = [
         "# Preview",
         "", 
@@ -41,5 +42,7 @@ def build_plan(intent: dict[str, Any], preflight: dict[str, Any], outputs: Path)
         "## Success",
         "- " + "\n- ".join(plan.get("verification_expectations", []) or ["Working order reached"]),
     ]
-    (outputs / "preview_latest.md").write_text("\n".join(preview), encoding="utf-8")
+    preview_text = "\n".join(preview)
+    (outputs / "preview_latest.md").write_text(preview_text, encoding="utf-8")
+    (outputs / "last_preview.md").write_text(preview_text, encoding="utf-8")
     return plan

@@ -20,16 +20,25 @@ def run_agent(root: Path, outputs: Path, intent: dict[str, Any], once: bool = Fa
     while True:
         preflight = run_preflight(root, outputs)
         ok, reasons = working_order(root, outputs)
+        outputs.mkdir(parents=True, exist_ok=True)
         if ok:
             status = {"ok": True, "reasons": []}
             (outputs / "last_status.json").write_text(json.dumps(status, indent=2), encoding="utf-8")
             return status
+        log_excerpt = ""
+        if "spoken_script_too_short" in reasons:
+            log_excerpt = "Spoken script too short; refusing to generate audio."
+        reason_codes = classify_failure(log_excerpt, "", reasons)
         failure_bundle = write_failure_bundle(
             outputs,
-            classify_failure("", "", reasons),
-            "",
+            reason_codes,
+            log_excerpt,
             "",
             [],
+        )
+        (outputs / "last_status.json").write_text(
+            json.dumps({"ok": False, "reasons": reasons, "last_action": "verify_failed"}, indent=2),
+            encoding="utf-8",
         )
         failure_payload = json.loads(failure_bundle.read_text(encoding="utf-8"))
         memory = read_recent(outputs / "memory.jsonl")
@@ -47,6 +56,10 @@ def run_agent(root: Path, outputs: Path, intent: dict[str, Any], once: bool = Fa
             plan = tactic.plan(failure_bundle=failure_payload, intent=intent, repo_map=preflight, memory=memory)
             tactic.apply(plan, patcher=apply_patch, snapshot=type("Snapshot", (), {"root": root}))
             ok_after, reasons_after = working_order(root, outputs)
+            (outputs / "last_status.json").write_text(
+                json.dumps({"ok": ok_after, "reasons": reasons_after, "last_action": tactic.id}, indent=2),
+                encoding="utf-8",
+            )
             append_memory(outputs / "memory.jsonl", {
                 "tactic": tactic.id,
                 "plan": plan.details,
@@ -66,6 +79,10 @@ def run_agent(root: Path, outputs: Path, intent: dict[str, Any], once: bool = Fa
             pre_attempt_snapshot(root, outputs)
             apply_patch(root, outputs, plan)
             ok_after, reasons_after = working_order(root, outputs)
+            (outputs / "last_status.json").write_text(
+                json.dumps({"ok": ok_after, "reasons": reasons_after, "last_action": "planner"}, indent=2),
+                encoding="utf-8",
+            )
             append_memory(outputs / "memory.jsonl", {
                 "plan": plan,
                 "reasons": reasons_after if reasons_after else reasons,
