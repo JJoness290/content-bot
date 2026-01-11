@@ -15,11 +15,11 @@ class VisualPlan:
 class VideoRulesManager:
     TIKTOK_MIN_SECONDS = 60.0
     TIKTOK_TARGET_SECONDS = 62.0
-    TIKTOK_MAX_SECONDS = 70.0
-    TIKTOK_MIN_VISUALS = 12
-    TIKTOK_MAX_VISUALS = 20
-    SEGMENT_MIN = 3.0
-    SEGMENT_MAX = 5.0
+    TIKTOK_MAX_SECONDS = 75.0
+    TIKTOK_MIN_VISUALS = 14
+    TIKTOK_MAX_VISUALS = 25
+    SEGMENT_MIN = 2.5
+    SEGMENT_MAX = 4.5
 
     def ensure_word_count(self, text: str, min_words: int, max_words: int) -> str:
         words = text.split()
@@ -43,7 +43,7 @@ class VideoRulesManager:
         target_duration = voice_duration
         if platform == "tiktok":
             target_duration = max(self.TIKTOK_TARGET_SECONDS, voice_duration)
-        visuals = math.ceil(target_duration / 4.0)
+        visuals = math.ceil(target_duration / 3.5)
         if platform == "tiktok":
             visuals = max(self.TIKTOK_MIN_VISUALS, min(self.TIKTOK_MAX_VISUALS, visuals))
         segment_duration = max(self.SEGMENT_MIN, min(self.SEGMENT_MAX, target_duration / visuals))

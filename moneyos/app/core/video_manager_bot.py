@@ -1,0 +1,129 @@
+from __future__ import annotations
+
+import hashlib
+import math
+import random
+import re
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Iterable
+
+import requests
+from app.core.video_rules_manager import VideoRulesManager
+
+ROOT = Path(__file__).resolve().parents[2]
+VISUALS_DIR = ROOT / "output" / "visuals"
+
+
+@dataclass
+class TrendSignals:
+    hashtags: list[str]
+    hooks: list[str]
+    pacing_seconds: float
+
+
+class VideoManagerBot:
+    def __init__(self) -> None:
+        self.rules = VideoRulesManager()
+
+    def _fetch_trending_hashtags(self) -> list[str]:
+        url = "https://www.tiktok.com/trending"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        try:
+            response = requests.get(url, headers=headers, timeout=10)
+            if response.status_code != 200:
+                return []
+            tags = re.findall(r"#([A-Za-z0-9_]+)", response.text)
+            return list(dict.fromkeys(tags))[:10]
+        except Exception:
+            return []
+
+    def _fallback_hashtags(self) -> list[str]:
+        return [
+            "moneytok",
+            "sidehustle",
+            "budgeting",
+            "personalfinance",
+            "moneymoves",
+            "ai tools",
+        ]
+
+    def _trend_signals(self) -> TrendSignals:
+        hashtags = self._fetch_trending_hashtags()
+        if not hashtags:
+            hashtags = self._fallback_hashtags()
+        hooks = [
+            "Quick money tip you can use tonight.",
+            "This one habit saved me £200 last month.",
+            "If I had to start over, I'd do this first.",
+            "Try this before you check your bank app again.",
+        ]
+        return TrendSignals(hashtags=hashtags, hooks=hooks, pacing_seconds=3.5)
+
+    def _visual_keywords(self, topic: str) -> Iterable[str]:
+        base = [
+            "city night",
+            "home office",
+            "laptop",
+            "phone",
+            "coffee shop",
+            "shopping",
+            "budget",
+            "finance",
+            "money",
+            "calendar",
+            "planner",
+            "hand writing",
+            "coins",
+            "bills",
+            "calculator",
+        ]
+        topic_words = re.findall(r"[a-zA-Z]+", topic.lower())
+        for word in topic_words[:5]:
+            base.append(word)
+        random.shuffle(base)
+        return base
+
+    def generate_visuals(self, platform: str, topic: str, voice_duration: float) -> list[Path]:
+        plan = self.rules.plan_visuals(platform, voice_duration)
+        self.rules.validate_plan(platform, voice_duration, plan)
+        visuals_needed = plan.visuals
+        visuals_dir = VISUALS_DIR / platform
+        visuals_dir.mkdir(parents=True, exist_ok=True)
+        visuals: list[Path] = []
+        used_hashes: set[str] = set()
+        keywords = list(self._visual_keywords(topic))
+        while len(visuals) < visuals_needed and keywords:
+            keyword = keywords.pop()
+            seed = random.randint(1000, 9999)
+            url = f"https://source.unsplash.com/1080x1920/?{keyword},{seed}"
+            try:
+                response = requests.get(url, timeout=15)
+                if response.status_code != 200:
+                    continue
+                digest = hashlib.md5(response.content).hexdigest()
+                if digest in used_hashes:
+                    continue
+                used_hashes.add(digest)
+                filename = visuals_dir / f"{platform}_{len(visuals)+1}.jpg"
+                filename.write_bytes(response.content)
+                visuals.append(filename)
+            except Exception:
+                continue
+
+        if len(visuals) < visuals_needed:
+            raise RuntimeError("Insufficient visuals for rendering.")
+
+        return visuals
+
+    def refine_script(self, script_text: str) -> str:
+        signals = self._trend_signals()
+        hook = random.choice(signals.hooks)
+        script_text = f"{hook} {script_text}"
+        script_text = script_text.replace("do not", "don't").replace("cannot", "can't")
+        script_text = script_text.replace("you are", "you're").replace("we are", "we're")
+        script_text = script_text.replace("it is", "it's")
+        return script_text

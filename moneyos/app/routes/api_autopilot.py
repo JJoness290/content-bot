@@ -2,6 +2,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from app.core import content_autopilot
+from app.core.progress import get_progress
 
 router = APIRouter(prefix="/api/autopilot")
 
@@ -27,3 +28,8 @@ async def enable(request: Request):
 async def disable(request: Request):
     content_autopilot.disable_autopilot()
     return {"enabled": False}
+
+
+@router.get("/progress/{platform}", response_class=JSONResponse)
+async def progress(platform: str):
+    return get_progress(platform)

@@ -12,7 +12,7 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any, Callable
 
-from app.core.video_rules_manager import VideoRulesManager
+from app.core.video_manager_bot import VideoManagerBot
 
 ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = ROOT / "data"
@@ -169,19 +169,26 @@ class CodeRepairBot:
         logger.info("RepairBot restarting application")
         os.execv(sys.executable, [sys.executable] + sys.argv)
 
-    def _safe_black_video(self, output_path: Path, duration: float = 1.0) -> bool:
-        rules = VideoRulesManager()
-        plan = rules.plan_visuals("tiktok", max(duration, 62.0))
-        colors = list(rules.color_sequence(plan.visuals))
+    def _safe_black_video(self, output_path: Path, duration: float = 62.0) -> bool:
+        manager = VideoManagerBot()
+        visuals = manager.generate_visuals("tiktok", "money habits", duration)
+        segment_duration = duration / len(visuals)
         cmd = ["ffmpeg", "-y"]
-        segment_duration = plan.segment_duration
-        for color in colors:
-            cmd += ["-f", "lavfi", "-i", f"color=c={color}:s=1080x1920:d={segment_duration}"]
-        concat_inputs = "".join(f"[{idx}:v]" for idx in range(plan.visuals))
-        filter_complex = f"{concat_inputs}concat=n={plan.visuals}:v=1:a=0[v0]"
+        for visual in visuals:
+            cmd += ["-loop", "1", "-t", f"{segment_duration:.2f}", "-i", visual.as_posix()]
+        video_labels = []
+        filter_parts = []
+        for idx in range(len(visuals)):
+            label = f"v{idx}"
+            filter_parts.append(
+                f"[{idx}:v]scale=1080:1920,zoompan=z=min(zoom+0.001,1.05):d=90:s=1080x1920[{label}]"
+            )
+            video_labels.append(f"[{label}]")
+        concat_inputs = "".join(video_labels)
+        filter_parts.append(f"{concat_inputs}concat=n={len(visuals)}:v=1:a=0[v0]")
         cmd += [
             "-filter_complex",
-            filter_complex,
+            ";".join(filter_parts),
             "-map",
             "[v0]",
             "-c:v",
