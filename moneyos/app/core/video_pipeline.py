@@ -371,7 +371,8 @@ def render_video(
     plan = rules.enforce_plan(platform, duration)
     if platform == "tiktok" and plan.total_duration < rules.TIKTOK_MIN_SECONDS:
         plan = rules.enforce_plan(platform, rules.TIKTOK_MIN_SECONDS)
-    rules.validate_plan(platform, duration, plan)
+    if not rules.validate_plan(platform, duration, plan):
+        plan = rules.enforce_plan(platform, max(duration, rules.TIKTOK_MIN_SECONDS))
     visuals = _ensure_visuals(plan.total_duration)
     include_subtitles = subtitles_available and not memory.disabled_subtitles
     ffmpeg_cmd = _build_ffmpeg_cmd(
@@ -462,10 +463,13 @@ def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
         logger.error("FFmpeg not available, cannot generate video.")
 
     payload = script.payload
-    voice_text = _script_to_voice_text(payload)
+    if script.platform == "tiktok":
+        voice_text = _clean_text(payload.get("body", ""))
+    else:
+        voice_text = _script_to_voice_text(payload)
     voice_text = manager.refine_script(voice_text)
     if script.platform == "tiktok":
-        voice_text = rules.ensure_word_count(voice_text, 150, 165)
+        voice_text = rules.extend_for_duration(voice_text, rules.TIKTOK_MIN_SECONDS)
     timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
     platform_dir = TIKTOK_DIR if script.platform == "tiktok" else YOUTUBE_DIR
     audio_path = platform_dir / f"voice_{script.id}_{timestamp}.mp3"
@@ -480,14 +484,27 @@ def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
 
     update_progress(script.platform, "voice_generation", 25, 90)
     duration = 0.0
-    generate_voiceover(voice_text, audio_path)
-    try:
-        duration = AudioSegment.from_file(audio_path).duration_seconds
-    except Exception:
-        duration = 0.0
+    for attempt in range(2):
+        generate_voiceover(voice_text, audio_path)
+        try:
+            duration = AudioSegment.from_file(audio_path).duration_seconds
+        except Exception:
+            duration = 0.0
+        if script.platform != "tiktok" or duration >= rules.TIKTOK_MIN_SECONDS:
+            break
+        logger.warning(
+            "Voiceover too short for TikTok (%.2fs), extending script (attempt %s).",
+            duration,
+            attempt + 1,
+        )
+        voice_text = rules.extend_for_duration(voice_text, rules.TIKTOK_MIN_SECONDS)
     update_progress(script.platform, "visual_selection", 45, 75)
     try:
         srt_path, duration = generate_captions(voice_text, audio_path, srt_path)
+        if script.platform == "tiktok" and duration < rules.TIKTOK_MIN_SECONDS:
+            voice_text = rules.extend_for_duration(voice_text, rules.TIKTOK_MIN_SECONDS)
+            generate_voiceover(voice_text, audio_path)
+            srt_path, duration = generate_captions(voice_text, audio_path, srt_path)
     except Exception as exc:
         logger.warning("Caption generation failed, rendering without subtitles: %s", exc)
         srt_path = None
