@@ -85,6 +85,7 @@ def repairbot_page(request: Request) -> HTMLResponse:
     preflight = _read_text(outputs / "preflight_latest.md")
     plan = _read_text(outputs / "plan_latest.md")
     preview = _read_text(outputs / "preview_latest.md")
+    failure_bundle = _read_text(outputs / "last_failure_bundle.json")
     latest_diff = _latest_diff(outputs)
     html = f"""
     <html>
@@ -101,6 +102,8 @@ def repairbot_page(request: Request) -> HTMLResponse:
         <pre>{plan}</pre>
         <h2>Preview</h2>
         <pre>{preview}</pre>
+        <h2>Failure Bundle</h2>
+        <pre>{failure_bundle}</pre>
         <form method='post' action='/api/repairbot/run-once'>
           <button type='submit'>Run Repair Iteration</button>
         </form>
@@ -108,3 +111,20 @@ def repairbot_page(request: Request) -> HTMLResponse:
     </html>
     """
     return HTMLResponse(html)
+@router.get("/api/repairbot/failure-bundle")
+def repairbot_failure_bundle() -> dict[str, Any]:
+    root = Path(__file__).resolve().parents[2]
+    return _read_json(root / "outputs" / "repairbot_v2" / "last_failure_bundle.json")
+
+
+@router.get("/api/repairbot/tactics")
+def repairbot_tactics() -> list[str]:
+    root = Path(__file__).resolve().parents[2]
+    rules_path = root / "outputs" / "repairbot_v2" / "playbook_rules.json"
+    if not rules_path.exists():
+        return []
+    rules = json.loads(rules_path.read_text(encoding="utf-8"))
+    tactics = []
+    for rule in rules:
+        tactics.extend(rule.get("preferred_tactics", []))
+    return sorted(set(tactics))

@@ -20,6 +20,7 @@ from app.routes import (
     metrics,
     overview,
     repairbot,
+    manager,
     research,
     settings,
     tiktok,
@@ -54,6 +55,7 @@ app.include_router(assets.router)
 app.include_router(api_autopilot.router)
 app.include_router(api_assets.router)
 app.include_router(repairbot.router)
+app.include_router(manager.router)
 app.include_router(tiktok.router)
 app.include_router(youtube.router)
 
