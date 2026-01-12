@@ -1,4 +1,5 @@
 fastapi
+pyyaml
 uvicorn
 jinja2
 pydantic

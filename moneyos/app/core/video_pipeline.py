@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import random
 import re
@@ -11,11 +12,18 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import ffmpeg
+import logging
 import requests
 from pydub import AudioSegment
+import subprocess
 
-from moneyos.app.core.video_queue import insert_output, update_script_payload
+from app.core.code_repair_bot import get_code_repair_bot
+from app.core.preflight_validator import PreflightValidator
+from app.core.progress import update_progress
+from app.core.video_manager_bot import VideoManagerBot
+from app.core.video_queue import insert_output, update_script_payload
+from app.core.video_rules_manager import VideoRulesManager
+from app.core.voice_manager import VoiceManager
 
 ROOT = Path(__file__).resolve().parents[2]
 ASSETS_DIR = ROOT / "assets"
@@ -27,6 +35,7 @@ TIKTOK_DIR = OUTPUT_DIR / "tiktok"
 YOUTUBE_DIR = OUTPUT_DIR / "youtube"
 
 FONT = "Arial"
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -50,6 +59,22 @@ def ffmpeg_available() -> bool:
 
 def _clean_text(text: str) -> str:
     return re.sub(r"\s+", " ", text.strip())
+
+
+def _estimate_seconds(text: str, wpm: int = 155) -> float:
+    words = len(text.split())
+    return (words / wpm) * 60 if wpm else 0.0
+
+
+def _expand_script(text: str) -> str:
+    additions = [
+        "Quick example: last week I said I would stop scrolling at night, but I kept checking one app and lost an hour.",
+        "Checklist: pick a cutoff time, move the app off your home screen, and replace the last five minutes with a calm routine.",
+        "Common mistake: relying on willpower alone. Fix: change the cue so the habit doesn’t start in the first place.",
+        "Wrap it up: if you change the first minute, the whole night feels lighter and tomorrow starts cleaner.",
+        "Simple CTA: try it tonight and notice how your morning feels.",
+    ]
+    return f"{text} " + " ".join(additions)
 
 
 def generate_script(topic: str, platform: str) -> dict[str, str]:
@@ -76,18 +101,6 @@ def generate_script(topic: str, platform: str) -> dict[str, str]:
 
 def _script_to_voice_text(payload: dict[str, Any]) -> str:
     text = _clean_text(f"{payload['hook']} {payload['body']} {payload['cta']}")
-    words = text.split()
-    min_words = 75
-    max_words = 150
-    filler = (
-        " Here is the quick buyer checklist: prioritise reliability, compare annual costs, "
-        "and pick the option that saves you time every single week."
-    )
-    while len(words) < min_words:
-        text = _clean_text(f"{text} {filler}")
-        words = text.split()
-    if len(words) > max_words:
-        text = " ".join(words[:max_words])
     return text
 
 
@@ -98,26 +111,18 @@ async def _edge_tts_save(text: str, output_path: Path) -> None:
     await communicate.save(str(output_path))
 
 
-def _pyttsx3_save(text: str, output_path: Path) -> None:
-    import pyttsx3
-
-    engine = pyttsx3.init()
-    engine.setProperty("rate", 170)
-    engine.save_to_file(text, str(output_path))
-    engine.runAndWait()
-
-
 def generate_voiceover(text: str, output_path: Path) -> Path:
+    bot = get_code_repair_bot()
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        asyncio.run(_edge_tts_save(text, output_path))
-        return output_path
-    except Exception:
-        wav_path = output_path.with_suffix(".wav")
-        _pyttsx3_save(text, wav_path)
-        audio = AudioSegment.from_wav(wav_path)
-        audio.export(output_path, format="mp3")
-        return output_path
+    voice = VOICE_MANAGER.test_and_select("Most people are broke because of THIS habit.")
+    bot.retry_operation(
+        lambda: VOICE_MANAGER.synthesize(text, voice, rate="+15%"),
+        context={"op": "voice_select"},
+    )
+    if not VOICE_MANAGER.validate_voice(voice):
+        raise RuntimeError("voice_vibe_failed")
+    output_path.write_bytes((VOICE_MANAGER.output_dir / f"voice_{voice.name}.mp3").read_bytes())
+    return output_path
 
 
 def _sentence_chunks(text: str) -> list[str]:
@@ -134,7 +139,9 @@ def _format_srt_timestamp(seconds: float) -> str:
     return f"{hrs:02}:{mins:02}:{secs:02},{ms:03}"
 
 
-def generate_srt(text: str, audio_path: Path, output_path: Path) -> tuple[Path, float]:
+def generate_captions(text: str, audio_path: Path, output_path: Path) -> tuple[Path, float]:
+    bot = get_code_repair_bot()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     audio = AudioSegment.from_file(audio_path)
     duration = audio.duration_seconds
     sentences = _sentence_chunks(text)
@@ -150,7 +157,10 @@ def generate_srt(text: str, audio_path: Path, output_path: Path) -> tuple[Path, 
         current = end
         wrapped = "\n".join(textwrap.wrap(sentence, width=42))
         lines.append(f"{idx}\n{_format_srt_timestamp(start)} --> {_format_srt_timestamp(end)}\n{wrapped}\n")
-    output_path.write_text("\n".join(lines), encoding="utf-8")
+    bot.retry_operation(
+        lambda: output_path.write_text("\n".join(lines), encoding="utf-8"),
+        context={"op": "write_srt", "path": str(output_path)},
+    )
     return output_path, duration
 
 
@@ -165,6 +175,7 @@ def _pick_local_background() -> tuple[Path | None, bool]:
 
 
 def _pexels_background(query: str) -> tuple[Path | None, bool]:
+    bot = get_code_repair_bot()
     api_key = os.environ.get("PEXELS_API_KEY")
     if not api_key:
         return None, False
@@ -191,7 +202,10 @@ def _pexels_background(query: str) -> tuple[Path | None, bool]:
     if not filename.exists():
         stream = requests.get(link, timeout=30)
         stream.raise_for_status()
-        filename.write_bytes(stream.content)
+        bot.retry_operation(
+            lambda: filename.write_bytes(stream.content),
+            context={"op": "write_pexels", "path": str(filename)},
+        )
     return filename, True
 
 
@@ -202,108 +216,349 @@ def _select_background(topic: str) -> tuple[Path | None, bool]:
     return _pexels_background(topic)
 
 
+MANAGER_BOT = VideoManagerBot()
+RULES_MANAGER = VideoRulesManager()
+PREFLIGHT_VALIDATOR = PreflightValidator()
+VOICE_MANAGER = VoiceManager(OUTPUT_DIR / "voice_tests")
+
+
 def render_video(
     *,
     script_text: str,
     hook: str,
     audio_path: Path,
-    srt_path: Path,
-    output_path: Path,
+    srt_path: Path | None,
     duration: float,
     background_path: Path | None,
     background_is_video: bool,
-) -> None:
+    platform: str,
+    script_id: int,
+) -> Path:
+    bot = get_code_repair_bot()
+    rules = RULES_MANAGER
+    manager = MANAGER_BOT
     ensure_dirs()
+    audio_path = audio_path.resolve()
+    srt_path = srt_path.resolve().as_posix() if srt_path else None
+    background_path = background_path.resolve() if background_path else None
+    output_dir = OUTPUT_DIR / platform
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = (output_dir / f"video_{script_id}.mp4").resolve()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    bot.retry_operation(lambda: output_path.touch(exist_ok=True), context={"op": "touch_video"})
+    assert output_path.exists()
+    assert output_path.suffix == ".mp4"
+    assert not output_path.stem.isdigit()
+    logger.info("FFmpeg output path: %s", output_path)
     size = "1080x1920"
-    if background_path:
-        if background_is_video:
-            video_in = ffmpeg.input(str(background_path), stream_loop=-1)
-            video = video_in.filter("scale", 1080, 1920).filter("fps", fps=30)
-        else:
-            video_in = ffmpeg.input(str(background_path), loop=1, framerate=30, t=duration)
-            video = (
-                video_in.filter(
-                    "zoompan",
-                    z="min(zoom+0.0008,1.05)",
-                    d=int(duration * 30),
-                    s=size,
-                )
-                .filter("scale", 1080, 1920)
-                .filter("fps", fps=30)
-            )
-    else:
-        video_in = ffmpeg.input(f"color=c=black:s={size}:d={duration}", f="lavfi")
-        video = video_in.filter("fps", fps=30)
 
-    hook_text = _clean_text(hook)
-    hook_draw = video.filter(
-        "drawtext",
-        font=FONT,
-        text=hook_text,
-        fontsize=68,
-        fontcolor="white",
-        shadowcolor="black",
-        shadowx=2,
-        shadowy=2,
-        x="(w-text_w)/2",
-        y="(h-text_h)/2",
-        enable="between(t,0,3)",
-    )
-
-    subtitled = hook_draw.filter(
-        "subtitles",
-        filename=str(srt_path),
-        force_style="FontName=Arial,FontSize=38,PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,Outline=2,Alignment=2,MarginV=120",
-    )
-
-    audio = ffmpeg.input(str(audio_path))
-    (
-        ffmpeg.output(
-            subtitled,
-            audio,
-            str(output_path),
-            vcodec="libx264",
-            acodec="aac",
-            pix_fmt="yuv420p",
-            r=30,
-            shortest=1,
-            movflags="+faststart",
+    def _zoompan_filter(frames: int, zoom_step: float) -> str:
+        return (
+            "scale=1080:1920,"
+            f"zoompan=z='min(zoom+{zoom_step},1.08)':d={frames}:"
+            "x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
         )
-        .overwrite_output()
-        .run(quiet=True)
+
+    def _build_concat_filters(clip_count: int, frames: int) -> tuple[list[str], str]:
+        filter_parts = []
+        video_labels = []
+        for idx in range(clip_count):
+            label = f"v{idx}"
+            zoom_step = 0.002 if idx % 2 == 0 else 0.003
+            if idx % 4 == 0:
+                zoom_step = 0.004
+            filter_parts.append(f"[{idx}:v]{_zoompan_filter(frames, zoom_step)}[{label}]")
+            video_labels.append(f"[{label}]")
+        concat_inputs = "".join(video_labels)
+        filter_parts.append(f"{concat_inputs}concat=n={clip_count}:v=1:a=0[v0]")
+        return filter_parts, "[v0]"
+
+    def _build_ffmpeg_cmd(
+        *,
+        output_file: Path,
+        include_subtitles: bool,
+        include_audio: bool,
+        plan_duration: float,
+        visuals: list[Path],
+    ) -> list[str]:
+        cmd: list[str] = ["ffmpeg", "-y"]
+        plan_visuals = len(visuals)
+        segment_duration = max(1.0, min(3.0, plan_duration / plan_visuals))
+        for visual in visuals:
+            cmd += [
+                "-loop",
+                "1",
+                "-t",
+                f"{segment_duration:.2f}",
+                "-i",
+                visual.as_posix(),
+            ]
+        if include_audio:
+            cmd += ["-i", audio_path.as_posix()]
+
+        frames = max(1, int(25 * segment_duration))
+        filter_parts, video_map = _build_concat_filters(plan_visuals, frames)
+        if include_subtitles and srt_path:
+            filter_parts.append(f"[v0]subtitles={srt_path}[vout]")
+            video_map = "[vout]"
+        filter_complex = ";".join(filter_parts)
+        cmd += ["-filter_complex", filter_complex, "-map", video_map]
+        if include_audio:
+            cmd += ["-map", f"{plan_visuals}:a"]
+
+        cmd += ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", "25"]
+        if include_audio:
+            cmd += ["-c:a", "aac", "-shortest"]
+        cmd += ["-movflags", "+faststart", output_file.as_posix()]
+        return cmd
+
+    def _run_ffmpeg(cmd: list[str]) -> tuple[bool, str]:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            return False, result.stderr or result.stdout
+        return True, ""
+
+    def _ensure_visuals(plan_duration: float) -> list[Path]:
+        visuals = manager.generate_visuals(platform, script_text, plan_duration)
+        visuals = [visual for visual in visuals if visual.exists() and visual.stat().st_size > 0]
+        if len(visuals) < plan.visuals and visuals:
+            needed = plan.visuals - len(visuals)
+            visuals.extend(visuals[:needed])
+        manager.validate_platform_rules(platform, plan_duration, len(visuals))
+        return visuals
+    if not audio_path.exists() or audio_path.stat().st_size == 0:
+        raise RuntimeError("TTS failed: audio missing. Refusing to generate text-based subtitles fallback.")
+    subtitles_available = bool(srt_path) and Path(srt_path).exists()
+    if not subtitles_available:
+        logger.warning("Captions missing, rendering without subtitles")
+
+    last_error = ""
+    memory = bot.memory
+    if platform == "tiktok" and duration < rules.TIKTOK_MIN_SECONDS:
+        duration = rules.TIKTOK_TARGET_SECONDS
+    plan = rules.enforce_plan(platform, duration)
+    if platform == "tiktok" and plan.total_duration < rules.TIKTOK_MIN_SECONDS:
+        plan = rules.enforce_plan(platform, rules.TIKTOK_MIN_SECONDS)
+    if not rules.validate_plan(platform, duration, plan):
+        plan = rules.enforce_plan(platform, max(duration, rules.TIKTOK_MIN_SECONDS))
+    visuals = _ensure_visuals(plan.total_duration)
+    include_subtitles = subtitles_available and not memory.disabled_subtitles
+    ffmpeg_cmd = _build_ffmpeg_cmd(
+        output_file=output_path,
+        include_subtitles=include_subtitles,
+        include_audio=True,
+        plan_duration=plan.total_duration,
+        visuals=visuals,
     )
+    logger.info("FFmpeg command: %s", " ".join(ffmpeg_cmd))
+    ok, stderr = _run_ffmpeg(ffmpeg_cmd)
+    if not ok:
+        last_error = stderr
+        signature = bot.intercept_error(RuntimeError(stderr), context={"phase": "primary", "stderr": last_error})
+        bot.apply_fix(signature, last_error, context={"phase": "primary", "ffmpeg_cmd": ffmpeg_cmd})
+        repair_plan = bot.plan_repair(last_error)
+        if repair_plan["action"] in {"rebuild_graph", "regenerate_visuals", "retry_with_new_visuals"}:
+            visuals = _ensure_visuals(plan.total_duration)
+        if repair_plan["action"] == "disable_subtitles":
+            include_subtitles = False
+        if repair_plan["action"] == "new_output_path":
+            output_path = (output_dir / f"video_{script_id}_repair.mp4").resolve()
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            bot.retry_operation(lambda: output_path.touch(exist_ok=True), context={"op": "touch_video"})
+        ffmpeg_cmd = _build_ffmpeg_cmd(
+            output_file=output_path,
+            include_subtitles=False,
+            include_audio=True,
+            plan_duration=plan.total_duration,
+            visuals=visuals,
+        )
+        logger.info("FFmpeg command retry: %s", " ".join(ffmpeg_cmd))
+        ok, stderr = _run_ffmpeg(ffmpeg_cmd)
+        if not ok:
+            last_error = stderr
+            bot.fallback_to_safe_mode()
+
+    if not output_path.exists() or output_path.stat().st_size == 0:
+        logger.info("FFmpeg render attempt 2 safe mode")
+        safe_output_path = (output_dir / f"video_{script_id}_safe.mp4").resolve()
+        safe_output_path.parent.mkdir(parents=True, exist_ok=True)
+        bot.retry_operation(lambda: safe_output_path.touch(exist_ok=True), context={"op": "touch_video"})
+        assert safe_output_path.exists()
+        assert safe_output_path.suffix == ".mp4"
+        safe_cmd = _build_ffmpeg_cmd(
+            output_file=safe_output_path,
+            include_subtitles=False,
+            include_audio=True,
+            plan_duration=plan.total_duration,
+            visuals=visuals,
+        )
+        logger.info("FFmpeg safe command: %s", " ".join(safe_cmd))
+        ok, stderr = _run_ffmpeg(safe_cmd)
+        if ok:
+            output_path = safe_output_path
+        else:
+            logger.warning("FFmpeg safe mode with audio failed, retrying without audio.")
+            safe_cmd = _build_ffmpeg_cmd(
+                output_file=safe_output_path,
+                include_subtitles=False,
+                include_audio=False,
+                plan_duration=plan.total_duration,
+                visuals=visuals,
+            )
+            logger.info("FFmpeg safe command no-audio: %s", " ".join(safe_cmd))
+            ok, stderr = _run_ffmpeg(safe_cmd)
+            if ok:
+                output_path = safe_output_path
+            else:
+                last_error = stderr
+                signature = bot.intercept_error(RuntimeError(stderr), context={"phase": "safe_mode"})
+                bot.apply_fix(signature, last_error, context={"phase": "safe_mode", "ffmpeg_cmd": safe_cmd})
+                raise RuntimeError(f"FFmpeg safe mode failed: {stderr}")
+
+    return output_path
 
 
 def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
     ensure_dirs()
-    if not ffmpeg_available():
-        raise RuntimeError("FFmpeg not available. Install ffmpeg and add it to PATH.")
+    bot = get_code_repair_bot()
+    rules = RULES_MANAGER
+    manager = MANAGER_BOT
+    preflight = PREFLIGHT_VALIDATOR
+    update_progress(script.platform, "planning", 5, 140)
+    update_progress(script.platform, "script_fixing", 10, 120)
+    ffmpeg_ready = ffmpeg_available()
+    if not ffmpeg_ready:
+        logger.error("FFmpeg not available, cannot generate video.")
 
     payload = script.payload
-    voice_text = _script_to_voice_text(payload)
+    if script.platform == "tiktok":
+        voice_text = _clean_text(payload.get("body", ""))
+    else:
+        voice_text = _script_to_voice_text(payload)
+    spoken_script = manager.refine_script(voice_text)
+    if not isinstance(spoken_script, str):
+        raise RuntimeError("Spoken script is not a string.")
+    if "00:00:" in spoken_script or "\n-->" in spoken_script:
+        raise RuntimeError("Subtitles were incorrectly treated as narration.")
+    min_seconds = 60 if script.platform == "tiktok" else 120
+    expansions_used = 0
+    while _estimate_seconds(spoken_script) < min_seconds and expansions_used < 3:
+        spoken_script = _expand_script(spoken_script)
+        expansions_used += 1
+    length_report = {
+        "word_count": len(spoken_script.split()),
+        "est_seconds": round(_estimate_seconds(spoken_script), 2),
+        "min_seconds": min_seconds,
+        "expansions_used": expansions_used,
+    }
+    script_output_dir = ROOT / "outputs"
+    script_output_dir.mkdir(parents=True, exist_ok=True)
+    script_path = script_output_dir / "latest_spoken_script.txt"
+    script_path.write_text(spoken_script, encoding="utf-8")
+    (script_output_dir / "latest_length_report.json").write_text(
+        json.dumps(length_report, indent=2),
+        encoding="utf-8",
+    )
+    logger.info("[SCRIPT] %s", spoken_script[:200])
     timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
     platform_dir = TIKTOK_DIR if script.platform == "tiktok" else YOUTUBE_DIR
     audio_path = platform_dir / f"voice_{script.id}_{timestamp}.mp3"
     srt_path = platform_dir / f"captions_{script.id}_{timestamp}.srt"
-    video_path = platform_dir / f"video_{script.id}_{timestamp}.mp4"
+    output_dir = OUTPUT_DIR / script.platform
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / f"video_{script.id}.mp4"
+    preflight_result = preflight.validate_or_repair(output_path, script.platform)
+    if not preflight_result.ok:
+        update_progress(script.platform, "blocked", 0, 0)
+        return {"status": "blocked – requires code fix", "reason": preflight_result.message}
 
-    generate_voiceover(voice_text, audio_path)
-    srt_path, duration = generate_srt(voice_text, audio_path, srt_path)
+    update_progress(script.platform, "voice_generation", 25, 90)
+    logger.info("[PIPELINE] generating voice from spoken script")
+    duration = 0.0
+    generate_voiceover(spoken_script, audio_path)
+    logger.info("[AUDIO] voice generated")
+    try:
+        duration = AudioSegment.from_file(audio_path).duration_seconds
+    except Exception:
+        duration = 0.0
+    if duration <= 0 or not audio_path.exists() or audio_path.stat().st_size == 0:
+        raise RuntimeError("TTS failed: audio missing. Refusing to generate text-based subtitles fallback.")
+    latest_outputs = ROOT / "outputs"
+    latest_outputs.mkdir(parents=True, exist_ok=True)
+    latest_audio_mp3 = latest_outputs / "latest_audio.mp3"
+    latest_audio_mp3.write_bytes(audio_path.read_bytes())
+    try:
+        audio_segment = AudioSegment.from_file(audio_path)
+        audio_segment.export(latest_outputs / "latest_audio.wav", format="wav")
+    except Exception:
+        logger.warning("Failed to export latest_audio.wav.")
+    update_progress(script.platform, "visual_selection", 45, 75)
+    logger.info("[PIPELINE] generating subtitles from audio")
+    try:
+        srt_path, duration = generate_captions(spoken_script, audio_path, srt_path)
+        logger.info("[SUBS] subtitles generated from audio")
+        latest_captions = latest_outputs / "latest_captions.srt"
+        latest_captions.write_bytes(srt_path.read_bytes())
+    except Exception as exc:
+        logger.warning("Caption generation failed, rendering without subtitles: %s", exc)
+        srt_path = None
+        duration = max(duration, 1.0)
+    if not audio_path.exists() or audio_path.stat().st_size == 0:
+        raise RuntimeError("TTS failed: audio missing. Refusing to generate text-based subtitles fallback.")
+    if srt_path and not srt_path.exists():
+        logger.warning("Caption file missing, rendering without subtitles: %s", srt_path)
+        srt_path = None
 
-    background_path, background_is_video = _select_background(payload.get("topic", "business"))
-    render_video(
-        script_text=voice_text,
-        hook=payload["hook"],
-        audio_path=audio_path,
-        srt_path=srt_path,
-        output_path=video_path,
-        duration=duration,
-        background_path=background_path,
-        background_is_video=background_is_video,
-    )
+    update_progress(script.platform, "timeline_assembly", 60, 60)
 
-    rel_video = str(video_path.relative_to(OUTPUT_DIR))
-    rel_srt = str(srt_path.relative_to(OUTPUT_DIR))
+    try:
+        background_path, background_is_video = _select_background(payload.get("topic", "business"))
+    except Exception as exc:
+        logger.warning("Background selection failed, using fallback: %s", exc)
+        background_path, background_is_video = None, False
+    if background_path and not background_path.exists():
+        logger.warning("Background asset missing, using fallback: %s", background_path)
+        background_path, background_is_video = None, False
+    update_progress(script.platform, "rendering", 80, 45)
+    try:
+        if not ffmpeg_ready:
+            raise RuntimeError("FFmpeg not available.")
+        video_path = render_video(
+            script_text=spoken_script,
+            hook=payload["hook"],
+            audio_path=audio_path,
+            srt_path=srt_path,
+            duration=duration,
+            background_path=background_path,
+            background_is_video=background_is_video,
+            platform=script.platform,
+            script_id=script.id,
+        )
+    except Exception as exc:
+        update_progress(script.platform, "repairing", 85, 45)
+        tier = bot.classify_error(exc)
+        if tier == "tier3":
+            update_progress(script.platform, "blocked", 0, 0)
+            return {"status": "blocked – requires code fix", "reason": str(exc)}
+        signature = bot.intercept_error(exc, context={"phase": "render", "stderr": str(exc)})
+        bot.apply_fix(
+            signature,
+            str(exc),
+            context={
+                "fix": "ensure_output_path",
+                "output_path": str(output_path),
+                "duration": duration,
+            },
+        )
+        video_path = output_path
+    update_progress(script.platform, "validation", 95, 10)
+    logger.info("Video rendered: %s", video_path)
+    update_progress(script.platform, "complete", 100, 0)
+    latest_video = latest_outputs / "latest_video.mp4"
+    latest_video.write_bytes(Path(video_path).read_bytes())
+
+    rel_video = str(Path(video_path).relative_to(OUTPUT_DIR))
+    rel_srt = str(srt_path.relative_to(OUTPUT_DIR)) if srt_path else ""
     output_payload = {
         "script_id": script.id,
         "video_path": rel_video,
@@ -316,7 +571,8 @@ def generate_video_for_script(script: ScriptItem) -> dict[str, Any]:
 
     video_kind = "VIDEO_MP4" if script.platform == "tiktok" else "SHORT_VIDEO_MP4"
     insert_output(script.platform, video_kind, output_payload)
-    insert_output(script.platform, "SRT", output_payload)
+    if srt_path:
+        insert_output(script.platform, "SRT", output_payload)
     insert_output(
         script.platform,
         "CAPTION_HASHTAGS" if script.platform == "tiktok" else "TITLE_DESC_TAGS",

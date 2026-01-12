@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
-from moneyos.app.core import safety
+from app.core import safety
 
 router = APIRouter(prefix="/research")
 

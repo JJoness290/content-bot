@@ -4,7 +4,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(ROOT))
 
-from moneyos.app.core.content_generator import generate_autopilot_draft
+from app.core.content_generator import generate_autopilot_draft
 
 
 def main() -> None:

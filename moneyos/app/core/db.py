@@ -140,6 +140,21 @@ def run_migrations() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS video_autopilot_state (
+                platform TEXT PRIMARY KEY,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                interval_minutes INTEGER NOT NULL DEFAULT 15,
+                last_run_at TEXT,
+                last_action TEXT,
+                last_error TEXT,
+                locked_at TEXT,
+                last_script_id INTEGER,
+                last_video_payload_json TEXT
+            )
+            """
+        )
         columns = {
             row["name"] for row in conn.execute("PRAGMA table_info(scheduler_state)").fetchall()
         }
@@ -165,12 +180,35 @@ def run_migrations() -> None:
             conn.execute(
                 "ALTER TABLE scheduler_state ADD COLUMN autopilot_topic_index INTEGER NOT NULL DEFAULT 0"
             )
+        video_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(video_autopilot_state)").fetchall()
+        }
+        if "enabled" not in video_columns:
+            conn.execute(
+                "ALTER TABLE video_autopilot_state ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1"
+            )
+        if "interval_minutes" not in video_columns:
+            conn.execute(
+                "ALTER TABLE video_autopilot_state ADD COLUMN interval_minutes INTEGER NOT NULL DEFAULT 15"
+            )
+        if "last_run_at" not in video_columns:
+            conn.execute("ALTER TABLE video_autopilot_state ADD COLUMN last_run_at TEXT")
+        if "last_action" not in video_columns:
+            conn.execute("ALTER TABLE video_autopilot_state ADD COLUMN last_action TEXT")
+        if "last_error" not in video_columns:
+            conn.execute("ALTER TABLE video_autopilot_state ADD COLUMN last_error TEXT")
+        if "locked_at" not in video_columns:
+            conn.execute("ALTER TABLE video_autopilot_state ADD COLUMN locked_at TEXT")
+        if "last_script_id" not in video_columns:
+            conn.execute("ALTER TABLE video_autopilot_state ADD COLUMN last_script_id INTEGER")
+        if "last_video_payload_json" not in video_columns:
+            conn.execute("ALTER TABLE video_autopilot_state ADD COLUMN last_video_payload_json TEXT")
 
         _regenerate_draft_assets(conn)
 
 
 def _regenerate_draft_assets(conn: sqlite3.Connection) -> None:
-    from moneyos.app.core import content_generator
+    from app.core import content_generator
 
     rows = conn.execute(
         "SELECT id, title, content_md, metadata_json FROM assets WHERE status = ?",

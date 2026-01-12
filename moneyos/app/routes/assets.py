@@ -3,8 +3,8 @@ from datetime import datetime
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-from moneyos.app.core import audit, content_autopilot, safety
-from moneyos.app.core.db import get_connection
+from app.core import audit, content_autopilot, safety
+from app.core.db import get_connection
 
 router = APIRouter(prefix="/assets")
 

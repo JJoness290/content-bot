@@ -9,7 +9,7 @@ sys.path.append(str(ROOT))
 
 os.environ["MONEYOS_LIMITED_MODE"] = "1"
 
-from moneyos.app.main import app  # noqa: E402
+from app.main import app  # noqa: E402
 
 
 def main() -> None:

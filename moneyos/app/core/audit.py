@@ -2,7 +2,7 @@ import json
 from datetime import datetime
 from typing import Any
 
-from moneyos.app.core.db import get_connection
+from app.core.db import get_connection
 
 
 def log_action(name: str, action_type: str, metadata: dict[str, Any], decision: str, reason: str) -> None:

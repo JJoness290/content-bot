@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from moneyos.app.core import content_autopilot
+from app.core import content_autopilot
+from app.core.progress import get_progress
 
 router = APIRouter(prefix="/api/autopilot")
 
@@ -20,14 +21,15 @@ async def status(request: Request):
 @router.post("/enable", response_class=JSONResponse)
 async def enable(request: Request):
     interval = content_autopilot.enable_autopilot()
-    scheduler = request.app.state.scheduler
-    content_autopilot.schedule_job(scheduler, interval)
     return {"enabled": True, "interval_minutes": interval}
 
 
 @router.post("/disable", response_class=JSONResponse)
 async def disable(request: Request):
     content_autopilot.disable_autopilot()
-    scheduler = request.app.state.scheduler
-    content_autopilot.remove_job(scheduler)
     return {"enabled": False}
+
+
+@router.get("/progress/{platform}", response_class=JSONResponse)
+async def progress(platform: str):
+    return get_progress(platform)

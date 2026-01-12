@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
-from moneyos.app.core import safety, task_manager
+from app.core import safety, task_manager
 
 router = APIRouter(prefix="/checklist")
 

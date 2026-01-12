@@ -2,7 +2,7 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from moneyos.app.core import content_autopilot
+from app.core import content_autopilot
 
 router = APIRouter(prefix="/api/assets")
 

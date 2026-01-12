@@ -1,0 +1,20 @@
+product_name: MoneyOS
+user_intent:
+  vision: >
+    Build a highly autonomous content/video money-generation system.
+    It should generate TikTok/YouTube videos end-to-end, self-heal,
+    improve quality over time, and avoid brittle prompt hacks.
+  priorities:
+    - voice_must_work
+    - no_srt_as_script
+    - no_hook_spam_fillers
+    - phased_narrative: [hook, explain, reinforce, close]
+    - correctness_over_shortcuts
+  working_outputs:
+    spoken_script_txt: outputs/latest_spoken_script.txt
+    latest_audio: outputs/latest_audio.wav
+    latest_captions: outputs/latest_captions.srt
+    latest_video: outputs/latest_video.mp4
+  autonomy:
+    can_create_new_modules: true
+    can_refactor_existing_code: true
